@@ -1368,8 +1368,6 @@ def render_timeline(prs, data, meta, sec_n):
         above = evt.get('position', '') == 'above'
         bW, bH = Inches(2.62), Inches(1.04)
         bY = lineY - Inches(2.22) if above else lineY + Inches(0.80)
-        cH = abs((lineY - (bY + bH) if above else bY - lineY - Inches(0.14)).inches)
-
         # Connector line
         lY1 = bY + bH if above else lineY + Inches(0.14)
         lY2 = lineY if above else bY
