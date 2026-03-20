@@ -146,6 +146,34 @@ def set_round_corners(shape, radius_pct: int = 10):
 
 # ── SHAPE BUILDERS ────────────────────────────────────────────────────────
 
+def set_slide_bg(slide, color: RGBColor):
+    """Set slide background via direct XML — avoids python-pptx inline namespace bug
+    that PowerPoint ignores. Namespaces are inherited from root <p:sld> element."""
+    h = rgb_hex(color)
+    cSld = slide._element
+    # Remove any existing background
+    for old_bg in cSld.findall(qn('p:bg')):
+        cSld.remove(old_bg)
+    # Insert new bg BEFORE spTree (index 0 or 1)
+    bg_elem = parse_xml(
+        f'<p:bg {_ns_decl()}>'
+        f'<p:bgPr><a:solidFill><a:srgbClr val="{h}"/></a:solidFill>'
+        f'<a:effectLst/></p:bgPr></p:bg>'
+    )
+    # Strip inline namespace declarations so PowerPoint sees the background
+    for attr in list(bg_elem.attrib):
+        if attr.startswith('{') or 'xmlns' in attr:
+            del bg_elem.attrib[attr]
+    spTree = cSld.find(qn('p:spTree'))
+    if spTree is not None:
+        idx = list(cSld).index(spTree)
+        cSld.insert(idx, bg_elem)
+    else:
+        cSld.insert(0, bg_elem)
+
+def _ns_decl():
+    return 'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+
 def add_rect(slide, x, y, w, h, fill_color=None, fill_xml=None,
              line_color=None, line_width=0.75, line_xml=None, radius=0):
     """Add a rectangle or rounded rectangle."""
@@ -506,8 +534,7 @@ def render_title(prs, meta):
 
 def render_toc(prs, sections, meta):
     sl = prs.slides.add_slide(prs.slide_layouts[6])
-    sl.background.fill.solid()
-    sl.background.fill.fore_color.rgb = C['offWhite']
+    set_slide_bg(sl, C['offWhite'])
 
     add_header(sl, 'Contents',
                f"{meta.get('drug')} · {meta.get('indication')} · {meta.get('year')}")
@@ -560,11 +587,6 @@ def render_divider(prs, n, label, icon=''):
              font_size=120, font_face=FONT_TITLE, bold=True,
              color=RGBColor(0x1A, 0x34, 0x60), valign='top')
 
-    # Right panel — large section number echo
-    add_text(sl, str(n), Inches(11.30), Inches(1.60), Inches(1.80), Inches(2.20),
-             font_size=88, font_face=FONT_TITLE, bold=True,
-             color=C['teal'], align='center', valign='middle')
-
     # Section label
     add_text(sl, label, Inches(0.42), Inches(3.0), Inches(10.50), Inches(1.60),
              font_size=34, font_face=FONT_TITLE, bold=True,
@@ -583,8 +605,7 @@ def render_divider(prs, n, label, icon=''):
 
 def render_executive_summary(prs, data, meta, sec_n):
     sl = prs.slides.add_slide(prs.slide_layouts[6])
-    sl.background.fill.solid()
-    sl.background.fill.fore_color.rgb = C['offWhite']
+    set_slide_bg(sl, C['offWhite'])
     add_header(sl, f"MAP {meta.get('year')}: Executive Summary",
                f"{meta.get('drug')} · {meta.get('indication')}")
     add_home_button(sl)
@@ -621,12 +642,13 @@ def render_executive_summary(prs, data, meta, sec_n):
         add_line(sl, MX + Inches(3.04), y + Inches(0.08),
                  MX + Inches(3.04), y + Inches(row_h - 0.08),
                  C['slate'], 0.5)
-        # Summary text (no refs)
+        # Summary text — bold for readability (matching Summary slide)
         summary = _strip_refs(row.get('summary', ''))
         add_text(sl, _trunc(summary, 400),
                  MX + Inches(3.16), y + Inches(0.05),
                  CW - Inches(3.24), Inches(row_h - 0.10),
-                 font_size=9.5, color=C['ink'], valign='middle', line_spacing=1.15)
+                 font_size=10, font_face=FONT_TITLE, bold=True,
+                 color=C['ink'], valign='middle', line_spacing=1.1)
 
     add_footer(sl, sec_n, 1)
     return sl
@@ -634,8 +656,7 @@ def render_executive_summary(prs, data, meta, sec_n):
 
 def render_prevalence(prs, data, meta, sec_n):
     sl = prs.slides.add_slide(prs.slide_layouts[6])
-    sl.background.fill.solid()
-    sl.background.fill.fore_color.rgb = C['offWhite']
+    set_slide_bg(sl, C['offWhite'])
     add_header(sl, f"Prevalence & Epidemiology: {meta.get('indication')} — {meta.get('scope_label')}",
                f"{meta.get('drug')} · {meta.get('year')}")
     add_home_button(sl)
@@ -732,8 +753,7 @@ def render_prevalence(prs, data, meta, sec_n):
 
 def render_unmet_needs(prs, data, meta, sec_n):
     sl = prs.slides.add_slide(prs.slide_layouts[6])
-    sl.background.fill.solid()
-    sl.background.fill.fore_color.rgb = C['offWhite']
+    set_slide_bg(sl, C['offWhite'])
     add_header(sl, data.get('heading') or f"Unmet Medical Needs: {meta.get('indication')} — {meta.get('scope_label')}",
                f"{meta.get('drug')} · {meta.get('year')}")
     add_home_button(sl)
@@ -794,8 +814,7 @@ def render_unmet_needs(prs, data, meta, sec_n):
 
 def render_guidelines(prs, data, meta, sec_n):
     sl = prs.slides.add_slide(prs.slide_layouts[6])
-    sl.background.fill.solid()
-    sl.background.fill.fore_color.rgb = C['offWhite']
+    set_slide_bg(sl, C['offWhite'])
     add_header(sl, data.get('heading') or f"{meta.get('indication')} Guidelines — {meta.get('drug')}",
                f"{meta.get('scope_label')} · {meta.get('year')}")
     add_home_button(sl)
@@ -853,8 +872,7 @@ def render_pivotal(prs, data, meta, sec_n):
               if t and t.get('name') and '[DATA PENDING' not in t.get('name', '')]
     if not trials:
         sl = prs.slides.add_slide(prs.slide_layouts[6])
-        sl.background.fill.solid()
-        sl.background.fill.fore_color.rgb = C['offWhite']
+        set_slide_bg(sl, C['offWhite'])
         add_header(sl, f"Pivotal Clinical Evidence: {meta.get('drug')}", f"Key Trial Data · {meta.get('year')}")
         add_home_button(sl)
         add_badge(sl, 'green')
@@ -872,8 +890,7 @@ def render_pivotal(prs, data, meta, sec_n):
 
 def _render_one_trial(prs, trial, meta, sec_n, idx, total):
     sl = prs.slides.add_slide(prs.slide_layouts[6])
-    sl.background.fill.solid()
-    sl.background.fill.fore_color.rgb = C['offWhite']
+    set_slide_bg(sl, C['offWhite'])
 
     subtitle = f'Trial {idx}/{total} · {meta.get("year")}' if total > 1 else f'Pivotal Evidence · {meta.get("year")}'
     add_header(sl, f"Pivotal Evidence: {_trunc(trial.get('name',''), 55)}", subtitle)
@@ -896,7 +913,7 @@ def _render_one_trial(prs, trial, meta, sec_n, idx, total):
              MX + Inches(0.14), Inches(1.62), CW - Inches(0.20), Inches(0.28),
              font_size=8.5, color=C['tealLt'], align='center', valign='middle')
 
-    # 3 KPI boxes left
+    # 3 KPI boxes left — label on top, value below, properly sized
     kpis = [
         (eff.get('mpfs_drug', '?'), f"mPFS — {meta.get('drug','')}", eff.get('mpfs_control'), C['teal']),
         (eff.get('hr_pfs', '?'),    'HR (PFS)',                        None,                    C['navyMid']),
@@ -906,15 +923,18 @@ def _render_one_trial(prs, trial, meta, sec_n, idx, total):
         y = Inches(2.00 + i * 1.02)
         add_rect(sl, MX, y, Inches(3.44), Inches(0.90),
                  fill_xml=grad_fill_xml(kc, C['navy'], angle_deg=135), radius=8)
-        add_text(sl, _trunc(str(val), 28), MX + Inches(0.08), y + Inches(0.02),
-                 Inches(3.28), Inches(0.54), font_size=22, font_face=FONT_TITLE, bold=True,
-                 color=C['white'], align='center', valign='middle')
-        add_text(sl, label, MX + Inches(0.08), y + Inches(0.58), Inches(3.28), Inches(0.22),
-                 font_size=8, color=C['tealLt'], align='center')
+        # Label on top (larger, readable)
+        add_text(sl, label, MX + Inches(0.10), y + Inches(0.04),
+                 Inches(3.24), Inches(0.22), font_size=9, font_face=FONT_BODY, bold=True,
+                 color=C['tealLt'], align='left', valign='middle')
+        # Value below (sized to fit CI values)
+        add_text(sl, _trunc(str(val), 40), MX + Inches(0.10), y + Inches(0.26),
+                 Inches(3.24), Inches(0.42), font_size=15, font_face=FONT_TITLE, bold=True,
+                 color=C['white'], align='left', valign='middle')
         if sub:
-            add_text(sl, _trunc(str(sub), 45), MX + Inches(0.08), y + Inches(0.76),
-                     Inches(3.28), Inches(0.14), font_size=7, color=RGBColor(0xAA,0xCC,0xDD),
-                     align='center', italic=True)
+            add_text(sl, f"vs. {_trunc(str(sub), 40)}", MX + Inches(0.10), y + Inches(0.70),
+                     Inches(3.24), Inches(0.18), font_size=7.5, color=RGBColor(0xAA,0xCC,0xDD),
+                     align='left', italic=True)
 
     # ORR bar chart
     orrD = _parse_orr(eff.get('orr_drug', '0'))
@@ -1014,8 +1034,7 @@ def _render_one_trial(prs, trial, meta, sec_n, idx, total):
 
 def render_swot(prs, data, meta, sec_n):
     sl = prs.slides.add_slide(prs.slide_layouts[6])
-    sl.background.fill.solid()
-    sl.background.fill.fore_color.rgb = C['offWhite']
+    set_slide_bg(sl, C['offWhite'])
     add_header(sl, 'SWOT Analysis',
                f"{meta.get('drug')} · {meta.get('indication')} · {meta.get('scope_label')} {meta.get('year')}")
     add_home_button(sl)
@@ -1067,8 +1086,7 @@ def render_swot(prs, data, meta, sec_n):
 def render_generic(prs, data, label, icon, meta, sec_n):
     """Generic slide for Disease Intro and others."""
     sl = prs.slides.add_slide(prs.slide_layouts[6])
-    sl.background.fill.solid()
-    sl.background.fill.fore_color.rgb = C['offWhite']
+    set_slide_bg(sl, C['offWhite'])
     add_header(sl, f'{icon}  {label}', f"{meta.get('drug')} · {meta.get('scope_label')}")
     add_home_button(sl)
     add_badge(sl, 'green')
@@ -1121,8 +1139,7 @@ def render_generic(prs, data, label, icon, meta, sec_n):
 
 def render_tactics(prs, data, meta, sec_n):
     sl = prs.slides.add_slide(prs.slide_layouts[6])
-    sl.background.fill.solid()
-    sl.background.fill.fore_color.rgb = C['offWhite']
+    set_slide_bg(sl, C['offWhite'])
     add_header(sl, data.get('heading') or f"Medical Affairs Tactical Plan {meta.get('year')}",
                f"{meta.get('drug')} · {meta.get('scope_label')}")
     add_home_button(sl)
@@ -1148,8 +1165,7 @@ def render_tactics(prs, data, meta, sec_n):
 
 def render_imperatives(prs, data, meta, sec_n):
     sl = prs.slides.add_slide(prs.slide_layouts[6])
-    sl.background.fill.solid()
-    sl.background.fill.fore_color.rgb = C['offWhite']
+    set_slide_bg(sl, C['offWhite'])
     add_header(sl, 'Strategic Imperatives',
                f"{meta.get('drug')} · {meta.get('scope_label')} · {meta.get('year')}")
     add_home_button(sl)
@@ -1195,9 +1211,9 @@ def render_imperatives(prs, data, meta, sec_n):
         y_off = start_y + Inches(1.04)
         item_h = (box_h - Inches(1.10)) / max(len(objs), 1)
         for obj in objs:
-            add_text(sl, f'• {_trunc(_strip_refs(obj), 200)}',
+            add_text(sl, f'• {_trunc(_strip_refs(obj), 100)}',
                      x + Inches(0.12), y_off, pW - Inches(0.20), item_h - Inches(0.02),
-                     font_size=9.5, color=C['ink'], valign='top', line_spacing=1.2)
+                     font_size=9, color=C['ink'], valign='top', line_spacing=1.15)
             y_off += item_h
 
     add_footer(sl, sec_n, 1)
@@ -1206,8 +1222,7 @@ def render_imperatives(prs, data, meta, sec_n):
 
 def render_narrative(prs, data, meta, sec_n):
     sl = prs.slides.add_slide(prs.slide_layouts[6])
-    sl.background.fill.solid()
-    sl.background.fill.fore_color.rgb = C['offWhite']
+    set_slide_bg(sl, C['offWhite'])
     add_header(sl, 'Scientific Narrative & Key Messaging', f"{meta.get('drug')} · {meta.get('year')}")
     add_home_button(sl)
     add_badge(sl, 'yellow')
@@ -1266,8 +1281,7 @@ def render_narrative(prs, data, meta, sec_n):
 
 def render_competitive(prs, data, meta, sec_n):
     sl = prs.slides.add_slide(prs.slide_layouts[6])
-    sl.background.fill.solid()
-    sl.background.fill.fore_color.rgb = C['offWhite']
+    set_slide_bg(sl, C['offWhite'])
     add_header(sl, data.get('heading') or f"Competitive Landscape: {meta.get('indication')}",
                f"{meta.get('scope_label')} · {meta.get('year')}")
     add_home_button(sl)
@@ -1311,8 +1325,7 @@ def render_competitive(prs, data, meta, sec_n):
 
 def render_iep(prs, data, meta, sec_n):
     sl = prs.slides.add_slide(prs.slide_layouts[6])
-    sl.background.fill.solid()
-    sl.background.fill.fore_color.rgb = C['offWhite']
+    set_slide_bg(sl, C['offWhite'])
     add_header(sl, data.get('heading') or f"Integrated Evidence Plan: {meta.get('drug')} {meta.get('year')}",
                f"{meta.get('scope_label')} · {meta.get('indication')}")
     add_home_button(sl)
@@ -1364,8 +1377,7 @@ def render_iep(prs, data, meta, sec_n):
 
 def render_timeline(prs, data, meta, sec_n):
     sl = prs.slides.add_slide(prs.slide_layouts[6])
-    sl.background.fill.solid()
-    sl.background.fill.fore_color.rgb = C['offWhite']
+    set_slide_bg(sl, C['offWhite'])
     add_header(sl, f"Medical Affairs Timeline {data.get('year') or meta.get('year')}",
                f"{meta.get('drug')} · {meta.get('scope_label')}")
     add_home_button(sl)
@@ -1405,12 +1417,12 @@ def render_timeline(prs, data, meta, sec_n):
         add_rect(sl, xv - bW/2, bY, bW, bH,
                  fill_color=C['white'], line_color=C['navyMid'], line_width=0.75, radius=8)
         add_rect(sl, xv - bW/2, bY, Inches(0.08), bH, fill_color=C['teal'], radius=3)
-        add_text(sl, _trunc(evt.get('event', ''), 60),
+        add_text(sl, _trunc(evt.get('event', ''), 35),
                  xv - bW/2 + Inches(0.14), bY + Inches(0.06),
                  bW - Inches(0.22), Inches(0.38),
                  font_size=9, font_face=FONT_TITLE, bold=True, color=C['ink'], line_spacing=1.1)
         if evt.get('detail'):
-            add_text(sl, _trunc(evt['detail'], 110),
+            add_text(sl, _trunc(evt['detail'], 65),
                      xv - bW/2 + Inches(0.14), bY + Inches(0.46),
                      bW - Inches(0.22), Inches(0.52),
                      font_size=7.5, color=C['stone'], valign='top', line_spacing=1.1)
@@ -1427,8 +1439,7 @@ def render_timeline(prs, data, meta, sec_n):
 
 def render_summary(prs, data, meta, sec_n):
     sl = prs.slides.add_slide(prs.slide_layouts[6])
-    sl.background.fill.solid()
-    sl.background.fill.fore_color.rgb = C['offWhite']
+    set_slide_bg(sl, C['offWhite'])
     add_header(sl, 'Summary & Strategic Next Steps',
                f"{meta.get('drug')} · {meta.get('scope_label')} · {meta.get('year')}")
     add_home_button(sl)
