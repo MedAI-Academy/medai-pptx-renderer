@@ -83,7 +83,7 @@ def solid_line_xml(color: RGBColor, width_pt: float = 0.75) -> str:
     return f'<a:ln xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" w="{w}"><a:solidFill><a:srgbClr val="{h}"/></a:solidFill></a:ln>'
 
 def set_fill(shape, fill_xml: str):
-    """Replace shape fill with given XML."""
+    """Replace shape fill with given XML and neutralize theme style override."""
     sp = shape._element
     spPr = sp.find(qn('p:spPr'))
     if spPr is None:
@@ -95,6 +95,16 @@ def set_fill(shape, fill_xml: str):
             spPr.remove(el)
     new_fill = parse_xml(fill_xml)
     spPr.insert(0, new_fill)
+    # CRITICAL: Neutralize p:style fillRef to prevent PowerPoint theme override
+    # fillRef idx="0" = no inherited fill, so our explicit fill wins
+    style = sp.find(qn('p:style'))
+    if style is not None:
+        fillRef = style.find(qn('a:fillRef'))
+        if fillRef is not None:
+            fillRef.set('idx', '0')
+            # Remove the scheme color reference inside fillRef
+            for child in list(fillRef):
+                fillRef.remove(child)
 
 def set_line(shape, line_xml: str):
     """Replace shape line/border with given XML."""
@@ -541,9 +551,10 @@ def render_divider(prs, n, label, icon=''):
              font_size=120, font_face=FONT_TITLE, bold=True,
              color=RGBColor(0x1A, 0x34, 0x60), valign='top')
 
-    # Icon (right panel)
-    add_text(sl, icon or '●', Inches(11.25), Inches(1.80), Inches(1.90), Inches(2.0),
-             font_size=64, align='center', valign='middle', color=C['teal'])
+    # Right panel — large section number echo
+    add_text(sl, str(n), Inches(11.30), Inches(1.60), Inches(1.80), Inches(2.20),
+             font_size=88, font_face=FONT_TITLE, bold=True,
+             color=C['teal'], align='center', valign='middle')
 
     # Section label
     add_text(sl, label, Inches(0.42), Inches(3.0), Inches(10.50), Inches(1.60),
@@ -573,7 +584,7 @@ def render_executive_summary(prs, data, meta, sec_n):
     rows_data = data.get('rows', [])[:6]
     avail_h = 5.88
     row_h = min(1.02, avail_h / max(len(rows_data), 1))
-    icons_list = ['🌍', '📊', '🔬', '🏆', '🎯', '📋']
+    icons_list = ['01', '02', '03', '04', '05', '06']
 
     for i, row in enumerate(rows_data):
         y = Inches(1.22 + i * (row_h + 0.03))
@@ -583,10 +594,14 @@ def render_executive_summary(prs, data, meta, sec_n):
                  line_color=C['slate'], line_width=0.5, radius=6)
         # Left accent
         add_rect(sl, MX, y, Inches(0.08), Inches(row_h), fill_color=C['teal'], radius=3)
-        # Icon
-        add_text(sl, icons_list[i] if i < len(icons_list) else '●',
-                 MX + Inches(0.14), y + Inches(row_h * 0.2),
-                 Inches(0.44), Inches(0.44), font_size=18, align='center', valign='middle')
+        # Icon — colored circle with number (reliable cross-platform)
+        icon_lbl = icons_list[i] if i < len(icons_list) else str(i+1).zfill(2)
+        ic = add_rect(sl, MX + Inches(0.14), y + Inches((row_h-0.36)/2),
+                      Inches(0.36), Inches(0.36),
+                      fill_xml=grad_fill_xml(C['teal'], C['tealDk'], angle_deg=90), radius=50)
+        add_text(sl, icon_lbl, MX + Inches(0.14), y + Inches((row_h-0.36)/2),
+                 Inches(0.36), Inches(0.36),
+                 font_size=8, bold=True, color=C['white'], align='center', valign='middle')
         # Topic
         add_text(sl, row.get('topic', ''),
                  MX + Inches(0.66), y + Inches(0.05),
@@ -642,7 +657,7 @@ def render_prevalence(prs, data, meta, sec_n):
 
     # RIGHT: 2×2 KPI grid
     kpi_colors = [C['teal'], C['navyMid'], RGBColor(0x2E, 0x86, 0xAB), C['orange']]
-    kpi_icons  = ['📊', '👥', '💊', '📈']
+    kpi_icons  = ['EP', 'PT', 'RX', 'OS']
 
     for i, kpi in enumerate(kpis):
         col = i % 2
@@ -659,7 +674,8 @@ def render_prevalence(prs, data, meta, sec_n):
         add_rect(sl, x, y, Inches(kw), Inches(0.34),
                  fill_xml=grad_fill_xml(kc, C['navy'], angle_deg=0), radius=6)
         # Icon + label
-        label_txt = f"{kpi_icons[i] if i < len(kpi_icons) else '●'}  {_trunc(kpi.get('label',''), 45)}"
+        kpi_code = kpi_icons[i] if i < len(kpi_icons) else '●'
+        label_txt = f"[ {kpi_code} ]  {_trunc(kpi.get('label',''), 42)}"
         add_text(sl, label_txt, x + Inches(0.10), y, Inches(kw - 0.14), Inches(0.34),
                  font_size=8, bold=True, color=C['white'], valign='middle')
         # Big value
@@ -1060,7 +1076,7 @@ def render_generic(prs, data, label, icon, meta, sec_n):
     avail_h = 5.88
     ih = min(0.94, avail_h / max(len(items), 1))
 
-    icon_list = ['📄','🔬','🧭','📊','🏆','🎯','🌍']
+    icon_list = ['A','B','C','D','E','F','G']
     for i, item in enumerate(items):
         y   = Inches(1.22 + i * (ih + 0.04))
         col = C['teal'] if i % 2 == 0 else C['navyMid']
@@ -1069,9 +1085,12 @@ def render_generic(prs, data, label, icon, meta, sec_n):
         add_rect(sl, MX, y, CW, Inches(ih), fill_color=bg,
                  line_color=col, line_width=0.75, radius=8)
         add_rect(sl, MX, y, Inches(0.12), Inches(ih), fill_color=col, radius=3)
-        add_text(sl, icon_list[i % len(icon_list)],
-                 MX + Inches(0.20), y + Inches((ih - 0.38) / 2),
-                 Inches(0.38), Inches(0.38), font_size=20, align='center', valign='middle')
+        _ic_lbl = icon_list[i % len(icon_list)]
+        add_rect(sl, MX + Inches(0.18), y + Inches((ih-0.36)/2),
+                 Inches(0.36), Inches(0.36), fill_color=col, radius=50)
+        add_text(sl, _ic_lbl, MX + Inches(0.18), y + Inches((ih-0.36)/2),
+                 Inches(0.36), Inches(0.36),
+                 font_size=9, bold=True, color=C['white'], align='center', valign='middle')
         add_text(sl, item.get('label', ''),
                  MX + Inches(0.70), y + Inches(0.06), Inches(2.74), Inches(ih - 0.12),
                  font_size=10, font_face=FONT_TITLE, bold=True, color=C['navy'], valign='middle')
