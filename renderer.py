@@ -147,29 +147,28 @@ def set_round_corners(shape, radius_pct: int = 10):
 # ── SHAPE BUILDERS ────────────────────────────────────────────────────────
 
 def set_slide_bg(slide, color: RGBColor):
-    """Set slide background via direct XML — avoids python-pptx inline namespace bug
-    that PowerPoint ignores. Namespaces are inherited from root <p:sld> element."""
+    """Set slide background via direct lxml SubElement — avoids python-pptx
+    inline namespace bug that PowerPoint ignores."""
     h = rgb_hex(color)
-    cSld = slide._element
+    sld = slide._element                     # <p:sld>
+    cSld = sld.find(qn('p:cSld'))            # <p:cSld>
+    if cSld is None:
+        return
+    spTree = cSld.find(qn('p:spTree'))
     # Remove any existing background
     for old_bg in cSld.findall(qn('p:bg')):
         cSld.remove(old_bg)
-    # Insert new bg BEFORE spTree (index 0 or 1)
-    bg_elem = parse_xml(
-        f'<p:bg {_ns_decl()}>'
-        f'<p:bgPr><a:solidFill><a:srgbClr val="{h}"/></a:solidFill>'
-        f'<a:effectLst/></p:bgPr></p:bg>'
-    )
-    # Strip inline namespace declarations so PowerPoint sees the background
-    for attr in list(bg_elem.attrib):
-        if attr.startswith('{') or 'xmlns' in attr:
-            del bg_elem.attrib[attr]
-    spTree = cSld.find(qn('p:spTree'))
+    # Build bg using SubElement (inherits parent namespace context — no inline xmlns)
+    bg = etree.SubElement(cSld, qn('p:bg'))
+    bgPr = etree.SubElement(bg, qn('p:bgPr'))
+    sf = etree.SubElement(bgPr, qn('a:solidFill'))
+    clr = etree.SubElement(sf, qn('a:srgbClr'))
+    clr.set('val', h)
+    etree.SubElement(bgPr, qn('a:effectLst'))
+    # Move bg before spTree
     if spTree is not None:
-        idx = list(cSld).index(spTree)
-        cSld.insert(idx, bg_elem)
-    else:
-        cSld.insert(0, bg_elem)
+        cSld.remove(bg)
+        cSld.insert(list(cSld).index(spTree), bg)
 
 def _ns_decl():
     return 'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
@@ -474,6 +473,7 @@ def dcell(txt, align='left', bold=False, color=None, fill=None, sz=9.0):
 
 def render_title(prs, meta):
     sl = prs.slides.add_slide(prs.slide_layouts[6])
+    set_slide_bg(sl, C['ink'])  # Ensure PowerPoint renders dark background
 
     # Full gradient background
     add_rect(sl, 0, 0, W, H,
@@ -576,6 +576,7 @@ def render_toc(prs, sections, meta):
 
 def render_divider(prs, n, label, icon=''):
     sl = prs.slides.add_slide(prs.slide_layouts[6])
+    set_slide_bg(sl, C['navy'])  # Ensure PowerPoint renders dark background
     add_rect(sl, 0, 0, W, H,
              fill_xml=grad_fill_xml(C['navy'], C['ink'], angle_deg=135))
     add_rect(sl, 0, 0, Inches(0.22), H,
