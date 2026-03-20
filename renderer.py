@@ -95,16 +95,25 @@ def set_fill(shape, fill_xml: str):
             spPr.remove(el)
     new_fill = parse_xml(fill_xml)
     spPr.insert(0, new_fill)
-    # CRITICAL: Neutralize p:style fillRef to prevent PowerPoint theme override
-    # fillRef idx="0" = no inherited fill, so our explicit fill wins
+    # CRITICAL: Neutralize ALL p:style theme overrides for PowerPoint
+    # fillRef idx=0 → no fill override
+    # lnRef idx=0   → no border override  
+    # effectRef idx=0 → no glow/shadow override
+    # fontRef → use dk1 (dark) not lt1 (white) so text colors are not forced white
     style = sp.find(qn('p:style'))
     if style is not None:
-        fillRef = style.find(qn('a:fillRef'))
-        if fillRef is not None:
-            fillRef.set('idx', '0')
-            # Remove the scheme color reference inside fillRef
-            for child in list(fillRef):
-                fillRef.remove(child)
+        for ref_tag in ['a:fillRef', 'a:lnRef', 'a:effectRef']:
+            ref = style.find(qn(ref_tag))
+            if ref is not None:
+                ref.set('idx', '0')
+                for child in list(ref):
+                    ref.remove(child)
+        # fontRef: keep idx="minor" but change lt1 to dk1 so text isn't forced white
+        fontRef = style.find(qn('a:fontRef'))
+        if fontRef is not None:
+            schemeClr = fontRef.find(qn('a:schemeClr'))
+            if schemeClr is not None:
+                schemeClr.set('val', 'dk1')
 
 def set_line(shape, line_xml: str):
     """Replace shape line/border with given XML."""
