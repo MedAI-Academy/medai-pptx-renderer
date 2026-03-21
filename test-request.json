@@ -1,0 +1,219 @@
+{
+  "module": "map",
+  "theme": "dark",
+  "widescreen": true,
+  "metadata": {
+    "title": "Medical Affairs Plan",
+    "drug": "Belantamab Mafodotin",
+    "indication": "Multiple Myeloma",
+    "company": "GSK",
+    "mapType": "country",
+    "country": "Germany",
+    "year": 2027,
+    "generatedAt": "2026-03-21T10:00:00Z",
+    "generationTimeSeconds": "263"
+  },
+  "confidenceScore": {
+    "overall": 97,
+    "sourceVerification": 98,
+    "traceability": 95,
+    "sourceQuality": 96,
+    "crossReference": 88,
+    "totalClaims": 48,
+    "verifiedSources": 52,
+    "totalSources": 54
+  },
+  "slides": [
+    {
+      "id": "title",
+      "layout": "TITLE",
+      "section": "Title",
+      "sectionIndex": 0,
+      "content": {
+        "title": "Belantamab Mafodotin",
+        "subtitle": "Country Medical Affairs Plan — Germany 2027",
+        "badges": ["Country MAP", "Oncology", "3L+ RRMM"],
+        "kpis": [
+          {"label": "Confidence", "value": "97%", "color": "teal"},
+          {"label": "Sources", "value": "54", "color": "accent"},
+          {"label": "Generated", "value": "4m 23s", "color": "gold"}
+        ]
+      }
+    },
+    {
+      "id": "toc",
+      "layout": "TOC",
+      "section": "Contents",
+      "sectionIndex": 0,
+      "content": {
+        "items": [
+          {"title": "Executive Summary"},
+          {"title": "Introduction to Disease"},
+          {"title": "Prevalence"},
+          {"title": "Treatment Landscape"},
+          {"title": "Guidelines"},
+          {"title": "Mode of Action"},
+          {"title": "Pivotal Studies"},
+          {"title": "SWOT Analysis"},
+          {"title": "Strategic Imperatives"},
+          {"title": "Tactical Plan"},
+          {"title": "Timeline"}
+        ]
+      }
+    },
+    {
+      "id": "div-1",
+      "layout": "DIVIDER",
+      "section": "Executive Summary",
+      "sectionIndex": 1,
+      "content": {
+        "title": "Executive Summary",
+        "subtitle": "Key strategic highlights for Germany 2027"
+      }
+    },
+    {
+      "id": "exec-summary",
+      "layout": "CONTENT_FULL",
+      "section": "Executive Summary",
+      "sectionIndex": 1,
+      "content": {
+        "title": "Executive Summary",
+        "body": "Belantamab mafodotin (BLENREP®) is a first-in-class anti-BCMA antibody-drug conjugate (ADC) approved for the treatment of relapsed/refractory multiple myeloma (RRMM). In Germany, approximately 7,000 new cases of multiple myeloma are diagnosed annually, with a significant unmet medical need in patients who have received ≥3 prior lines of therapy.\n\nThe DREAMM clinical program has demonstrated compelling efficacy across multiple combination regimens. DREAMM-7 showed a median PFS of 36.6 months for BVd vs 13.4 months for DVd (HR 0.41, p<0.001). DREAMM-8 demonstrated BPd superiority over Pd with an ORR of 77% vs 55%.\n\nThe 2027 Medical Affairs strategy focuses on three strategic imperatives: (1) Establishing BVd as the preferred 2L+ regimen through medical education and KOL engagement, (2) Generating real-world evidence to support G-BA HTA submission, and (3) Expanding the BCMA-ADC narrative through combination data and ISR programs.",
+        "references": [
+          {"id": "ref-1", "text": "Dimopoulos MA et al. NEJM 2024;391:1–12", "tier": 1, "type": "pubmed"},
+          {"id": "ref-2", "text": "Trudel S et al. Lancet 2024;403:1230–40", "tier": 1, "type": "pubmed"},
+          {"id": "ref-3", "text": "Robert Koch Institut, Krebsregisterdaten 2024", "tier": 2, "type": "guideline"}
+        ]
+      }
+    },
+    {
+      "id": "div-2",
+      "layout": "DIVIDER",
+      "section": "Pivotal Studies",
+      "sectionIndex": 2,
+      "content": {
+        "title": "Pivotal Studies",
+        "subtitle": "Phase 2/3 clinical evidence for belantamab mafodotin"
+      }
+    },
+    {
+      "id": "pivotal-table",
+      "layout": "TABLE",
+      "section": "Pivotal Studies",
+      "sectionIndex": 2,
+      "content": {
+        "title": "Pivotal Clinical Evidence",
+        "subtitle": "Phase 2/3 Studies with Belantamab Mafodotin",
+        "table": {
+          "headers": ["Study", "Phase", "Regimen", "N", "mPFS (mo)", "ORR", "Key AEs"],
+          "rows": [
+            ["DREAMM-7", "Phase 3", "BVd vs DVd", "494", "36.6 vs 13.4", "83% vs 72%", "Keratopathy 43%"],
+            ["DREAMM-8", "Phase 3", "BPd vs Pd", "302", "NR vs 12.7", "77% vs 55%", "Keratopathy 38%"],
+            ["DREAMM-3", "Phase 3", "Bela vs Pom+Dex", "325", "11.2 vs 7.0", "41% vs 36%", "Keratopathy 42%"],
+            ["DREAMM-2", "Phase 2", "Bela mono", "196", "2.8 (2.6mg)", "31%", "Keratopathy 72%"]
+          ]
+        },
+        "references": [
+          {"id": "ref-1", "text": "Dimopoulos MA et al. NEJM 2024;391:1–12", "tier": 1, "type": "pubmed"},
+          {"id": "ref-2", "text": "Trudel S et al. Lancet 2024;403:1230–40", "tier": 1, "type": "pubmed"},
+          {"id": "ref-3", "text": "Lonial S et al. Lancet Oncol 2020;21:207–21", "tier": 1, "type": "pubmed"}
+        ]
+      }
+    },
+    {
+      "id": "km-dreamm7",
+      "layout": "CHART_KM",
+      "section": "Pivotal Studies",
+      "sectionIndex": 2,
+      "content": {
+        "title": "DREAMM-7: Progression-Free Survival",
+        "chartData": {
+          "arms": [
+            {
+              "name": "BVd (Belantamab + Bortezomib + Dex)",
+              "color": "#22D3A5",
+              "timepoints": [0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36],
+              "survival": [1.0, 0.90, 0.82, 0.77, 0.72, 0.69, 0.65, 0.63, 0.60, 0.58, 0.57, 0.56, 0.55],
+              "atRisk": [247, 230, 210, 198, 185, 175, 162, 153, 140, 130, 120, 108, 98],
+              "median": 36.6
+            },
+            {
+              "name": "DVd (Daratumumab + Bortezomib + Dex)",
+              "color": "#FF5F7E",
+              "timepoints": [0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36],
+              "survival": [1.0, 0.82, 0.70, 0.62, 0.55, 0.48, 0.42, 0.38, 0.35, 0.31, 0.28, 0.25, 0.22],
+              "atRisk": [247, 210, 180, 158, 140, 122, 108, 95, 85, 72, 62, 52, 45],
+              "median": 13.4
+            }
+          ],
+          "xlabel": "Time (months)",
+          "ylabel": "Progression-Free Survival",
+          "hazardRatio": "HR 0.41 (95% CI 0.31–0.53), p<0.001"
+        },
+        "references": [
+          {"id": "ref-1", "text": "Dimopoulos MA et al. NEJM 2024;391:1–12", "tier": 1, "type": "pubmed"}
+        ]
+      }
+    },
+    {
+      "id": "swot",
+      "layout": "SWOT",
+      "section": "SWOT Analysis",
+      "sectionIndex": 3,
+      "content": {
+        "title": "SWOT Analysis — Belantamab Mafodotin in Germany",
+        "swotData": {
+          "strengths": [
+            "Best-in-class PFS in DREAMM-7 (HR 0.41)",
+            "First-in-class anti-BCMA ADC mechanism",
+            "Strong combination data (BVd, BPd)",
+            "Robust safety profile with manageable keratopathy"
+          ],
+          "weaknesses": [
+            "Keratopathy requires ophthalmological monitoring",
+            "Temporary visual impairment impacts QoL",
+            "Complex dosing schedule with dose delays",
+            "G-BA HTA dossier pending — reimbursement uncertain"
+          ],
+          "opportunities": [
+            "Growing RRMM population in Germany (~7,000/yr)",
+            "ISR program to generate German-specific RWE",
+            "EHA/ASH 2027 data presentations",
+            "Earlier-line expansion potential (1L triplet)"
+          ],
+          "threats": [
+            "Bispecific T-cell engagers (teclistamab, talquetamab)",
+            "CAR-T therapies (cilta-cel, ide-cel) for 4L+",
+            "AMNOG pricing pressure in Germany",
+            "Competitor BCMA combinations entering market"
+          ]
+        }
+      }
+    },
+    {
+      "id": "timeline",
+      "layout": "TIMELINE",
+      "section": "Timeline",
+      "sectionIndex": 4,
+      "content": {
+        "title": "Germany 2027 Timeline",
+        "events": [
+          {"date": "Q1 2027", "title": "KOL Advisory Board", "detail": "German KOL engagement: BVd positioning + ISR design"},
+          {"date": "Q2 2027", "title": "EHA Congress", "detail": "DREAMM-7 updated data, German KOL presentations"},
+          {"date": "Q3 2027", "title": "ISR Launch", "detail": "Real-world evidence registry at 15 German centers"},
+          {"date": "Q4 2027", "title": "ASH Congress", "detail": "BPd combination data, ISR interim results"},
+          {"date": "Q4 2027", "title": "G-BA Submission", "detail": "HTA dossier with DREAMM-7/8 + German RWE"}
+        ]
+      }
+    },
+    {
+      "id": "confidence",
+      "layout": "CONFIDENCE",
+      "section": "Confidence Score",
+      "sectionIndex": 99,
+      "content": {
+        "title": "MedAI Suite — Confidence Score Summary"
+      }
+    }
+  ]
+}
