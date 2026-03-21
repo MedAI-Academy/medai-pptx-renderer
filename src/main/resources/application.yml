@@ -13,23 +13,6 @@ spring:
   jackson:
     default-property-inclusion: non_null
 
-# CORS — allow Netlify origins
-medai:
-  cors:
-    allowed-origins:
-      - https://medai-dashboard.netlify.app
-      - https://medai-academy.netlify.app
-      - http://localhost:3000
-      - http://localhost:5173
-
-# Template config
-  templates:
-    default-theme: dark
-    widescreen-width: 13.33
-    widescreen-height: 7.5
-    standard-width: 10.0
-    standard-height: 7.5
-
 management:
   endpoints:
     web:

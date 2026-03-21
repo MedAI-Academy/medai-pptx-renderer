@@ -17,4 +17,4 @@ COPY --from=build /app/build/libs/medai-renderer.jar app.jar
 # Railway sets PORT env var
 EXPOSE 8080
 
-ENTRYPOINT ["java", "-Xmx512m", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-Xmx256m", "-Xms128m", "-XX:+UseSerialGC", "-Djava.awt.headless=true", "-jar", "app.jar"]
