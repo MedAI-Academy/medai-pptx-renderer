@@ -147,28 +147,33 @@ def set_round_corners(shape, radius_pct: int = 10):
 # ── SHAPE BUILDERS ────────────────────────────────────────────────────────
 
 def set_slide_bg(slide, color: RGBColor):
-    """Set slide background via direct lxml SubElement — avoids python-pptx
-    inline namespace bug that PowerPoint ignores."""
+    """Set slide background. PowerPoint reads <p:bg> from <p:sld> level,
+    so we place it as direct child of <p:sld> before <p:cSld>."""
     h = rgb_hex(color)
     sld = slide._element                     # <p:sld>
     cSld = sld.find(qn('p:cSld'))            # <p:cSld>
-    if cSld is None:
-        return
-    spTree = cSld.find(qn('p:spTree'))
-    # Remove any existing background
-    for old_bg in cSld.findall(qn('p:bg')):
-        cSld.remove(old_bg)
-    # Build bg using SubElement (inherits parent namespace context — no inline xmlns)
-    bg = etree.SubElement(cSld, qn('p:bg'))
+
+    # Remove any existing bg from BOTH levels
+    for old_bg in sld.findall(qn('p:bg')):
+        sld.remove(old_bg)
+    if cSld is not None:
+        for old_bg in cSld.findall(qn('p:bg')):
+            cSld.remove(old_bg)
+
+    # Build bg as child of <p:sld> (NOT cSld) — PowerPoint reads it from here
+    bg = etree.SubElement(sld, qn('p:bg'))
     bgPr = etree.SubElement(bg, qn('p:bgPr'))
     sf = etree.SubElement(bgPr, qn('a:solidFill'))
     clr = etree.SubElement(sf, qn('a:srgbClr'))
     clr.set('val', h)
     etree.SubElement(bgPr, qn('a:effectLst'))
-    # Move bg before spTree
-    if spTree is not None:
-        cSld.remove(bg)
-        cSld.insert(list(cSld).index(spTree), bg)
+
+    # Move bg to be first child of <p:sld>, before <p:cSld>
+    sld.remove(bg)
+    if cSld is not None:
+        sld.insert(list(sld).index(cSld), bg)
+    else:
+        sld.insert(0, bg)
 
 def _ns_decl():
     return 'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
@@ -1489,6 +1494,49 @@ def render_summary(prs, data, meta, sec_n):
 
 # ── DISPATCHER ────────────────────────────────────────────────────────────
 
+def _adapt_to_generic(data, section_id):
+    """Convert section-specific data structures to generic slides/items format."""
+    items = []
+    if section_id in ('market_access',):
+        appr = data.get('approval_status', {})
+        for k, v in appr.items():
+            if k != 'source' and v:
+                items.append({'label': k.replace('_', ' ').title(), 'text': str(v), 'source': appr.get('source', '')})
+        for r in data.get('reimbursement_table', []):
+            items.append({'label': r.get('country', ''), 'text': f"{r.get('status','')} — {r.get('detail','')}", 'source': r.get('source', '')})
+        if data.get('access_barriers'):
+            items.append({'label': 'Access Barriers', 'text': data['access_barriers']})
+    elif section_id in ('differentiators',):
+        for d in data.get('differentiators', []):
+            items.append({'label': d.get('title', ''), 'text': f"vs. {d.get('vs','')}: {d.get('evidence','')}", 'source': d.get('source', '')})
+    elif section_id in ('subgroup_analysis',):
+        for s in data.get('subgroups', []):
+            items.append({'label': f"{s.get('trial_name','')} — {s.get('subgroup','')}", 'text': f"N={s.get('n','?')}, {s.get('endpoint','')}: {s.get('result_drug','')} vs {s.get('result_control','')}, HR={s.get('hr','')}", 'source': s.get('source', '')})
+    elif section_id in ('areas_interest',):
+        for a in data.get('areas', []):
+            interests = ', '.join(a.get('interests', []))
+            items.append({'label': a.get('area', ''), 'text': f"{interests}. Aim: {a.get('aim','')}", 'source': f"Deadline: {a.get('deadline','')}"})
+    elif section_id in ('treatment_algo',):
+        for line in data.get('lines', []):
+            regimens = '; '.join(line.get('regimens', []))
+            items.append({'label': line.get('line', ''), 'text': f"[{line.get('eligible','')}] {regimens}", 'source': line.get('source', '')})
+    elif section_id in ('moa',):
+        if data.get('drug_class'):
+            items.append({'label': 'Drug Class & Target', 'text': f"{data.get('drug_class','')} — Target: {data.get('target','')}", 'source': ''})
+        for step in data.get('pathway_steps', []):
+            items.append({'label': f"Step {step.get('step','')}: {step.get('title','')}", 'text': step.get('description', ''), 'source': step.get('source', '')})
+        if data.get('key_differentiating_moa'):
+            items.append({'label': 'Key Differentiator', 'text': data['key_differentiating_moa'], 'source': data.get('key_reference', '')})
+    if items:
+        data['slides'] = [{'heading': '', 'items': items}]
+    return data
+
+def _render_adapted_generic(prs, data, meta, sec_n, section_id, label, icon):
+    """Render missing section types by adapting data to generic format."""
+    adapted = _adapt_to_generic(data, section_id)
+    return render_generic(prs, adapted, label, icon, meta, sec_n)
+
+
 SECTION_DISPATCH = {
     'executive_summary': render_executive_summary,
     'prevalence_kpi':    render_prevalence,
@@ -1504,6 +1552,9 @@ SECTION_DISPATCH = {
     'timeline':          render_timeline,
     'summary':           render_summary,
 }
+
+
+ADAPTED_SECTIONS = {'market_access', 'differentiators', 'subgroup_analysis', 'areas_interest', 'treatment_algo', 'moa', 'disease_intro'}
 
 
 def build_pptx(payload: dict) -> bytes:
@@ -1533,8 +1584,8 @@ def build_pptx(payload: dict) -> bytes:
         render_fn = SECTION_DISPATCH.get(sec_type)
         if render_fn:
             result = render_fn(prs, data, meta, n)
-            # pivotal returns a list, others return a single slide
-            # (already added to prs inside each function)
+        elif sec_type in ADAPTED_SECTIONS:
+            _render_adapted_generic(prs, data, meta, n, sec_type, label, icon)
         else:
             render_generic(prs, data, label, icon, meta, n)
 
