@@ -18,10 +18,15 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
     // Apache POI — PPTX generation
-    implementation 'org.apache.poi:poi-ooxml:5.4.0'
+    // poi-ooxml-full is REQUIRED for CT* schema classes (CTBackground, CTSolidColorFillProperties etc.)
+    // The default poi-ooxml-lite only has a subset and will cause ClassNotFoundException
+    implementation('org.apache.poi:poi-ooxml:5.3.0') {
+        exclude group: 'org.apache.poi', module: 'poi-ooxml-lite'
+    }
+    implementation 'org.apache.poi:poi-ooxml-full:5.3.0'
 
-    // JFreeChart — Kaplan-Meier curves, bar charts, pie charts
-    implementation 'org.jfree:jfreechart:1.5.5'
+    // JFreeChart — Kaplan-Meier curves, bar charts
+    implementation 'org.jfree:jfreechart:1.5.4'
 
     // Jackson — JSON processing
     implementation 'com.fasterxml.jackson.core:jackson-databind'

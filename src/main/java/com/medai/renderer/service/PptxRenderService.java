@@ -103,12 +103,12 @@ public class PptxRenderService {
             ThemeConfig.SIZE_SUBTITLE, ThemeConfig.FONT_BODY, ThemeConfig.HEX_MUTED,
             false, TextParagraph.TextAlign.LEFT);
 
-        // Badges
-        List<Map<String, Object>> badges = data.contentList("badges");
+        // Badges (JSON array of strings like ["Country MAP", "Oncology"])
+        @SuppressWarnings("unchecked")
+        List<Object> badges = (List<Object>) data.getContent().getOrDefault("badges", List.of());
         double bx = 0.8;
-        for (Map<String, Object> badge : badges) {
+        for (Object badge : badges) {
             String text = badge != null ? badge.toString() : "";
-            if (badge instanceof String s) text = s;
             PptxUtils.addRect(slide, bx, 3.6, 2.2, 0.38, ThemeConfig.HEX_SURFACE);
             PptxUtils.addText(slide, text, bx + 0.1, 3.6, 2.0, 0.38,
                 ThemeConfig.SIZE_SMALL, ThemeConfig.FONT_BODY, ThemeConfig.HEX_TEAL,

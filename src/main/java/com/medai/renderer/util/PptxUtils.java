@@ -66,7 +66,7 @@ public class PptxUtils {
         shape.setShapeType(org.apache.poi.sl.usermodel.ShapeType.RECT);
         shape.setAnchor(new Rectangle2D.Double(x * 72, y * 72, w * 72, h * 72));
         shape.setFillColor(ThemeConfig.hex(fillHex));
-        shape.setLineColor(null); // No border
+        shape.setLineWidth(0.0); // No border
         return shape;
     }
 
@@ -148,8 +148,8 @@ public class PptxUtils {
         textBox.setWordWrap(true);
         textBox.setTextAutofit(XSLFTextShape.TextAutofit.NORMAL);
 
-        // Remove default paragraph
-        textBox.getTextParagraphs().get(0).getPortions().forEach(r -> r.setText(""));
+        // Remove default paragraph text
+        textBox.getTextParagraphs().get(0).getTextRuns().forEach(r -> r.setText(""));
 
         for (int i = 0; i < items.length; i++) {
             XSLFTextParagraph para;
