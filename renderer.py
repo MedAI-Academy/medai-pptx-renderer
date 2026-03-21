@@ -147,33 +147,11 @@ def set_round_corners(shape, radius_pct: int = 10):
 # ── SHAPE BUILDERS ────────────────────────────────────────────────────────
 
 def set_slide_bg(slide, color: RGBColor):
-    """Set slide background. PowerPoint reads <p:bg> from <p:sld> level,
-    so we place it as direct child of <p:sld> before <p:cSld>."""
-    h = rgb_hex(color)
-    sld = slide._element                     # <p:sld>
-    cSld = sld.find(qn('p:cSld'))            # <p:cSld>
-
-    # Remove any existing bg from BOTH levels
-    for old_bg in sld.findall(qn('p:bg')):
-        sld.remove(old_bg)
-    if cSld is not None:
-        for old_bg in cSld.findall(qn('p:bg')):
-            cSld.remove(old_bg)
-
-    # Build bg as child of <p:sld> (NOT cSld) — PowerPoint reads it from here
-    bg = etree.SubElement(sld, qn('p:bg'))
-    bgPr = etree.SubElement(bg, qn('p:bgPr'))
-    sf = etree.SubElement(bgPr, qn('a:solidFill'))
-    clr = etree.SubElement(sf, qn('a:srgbClr'))
-    clr.set('val', h)
-    etree.SubElement(bgPr, qn('a:effectLst'))
-
-    # Move bg to be first child of <p:sld>, before <p:cSld>
-    sld.remove(bg)
-    if cSld is not None:
-        sld.insert(list(sld).index(cSld), bg)
-    else:
-        sld.insert(0, bg)
+    """Set slide background using native python-pptx API.
+    The build_pptx post-processing step moves <p:bg> to the correct
+    XML location for PowerPoint compatibility."""
+    slide.background.fill.solid()
+    slide.background.fill.fore_color.rgb = color
 
 def _ns_decl():
     return 'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
@@ -1592,7 +1570,56 @@ def build_pptx(payload: dict) -> bytes:
     buf = io.BytesIO()
     prs.save(buf)
     buf.seek(0)
-    return buf.read()
+    raw_bytes = buf.read()
+
+    # ── POST-PROCESS: Fix backgrounds for PowerPoint ──────────────────────
+    # python-pptx places <p:bg> inside <p:cSld> which PowerPoint ignores.
+    # PowerPoint reads <p:bg> only as direct child of <p:sld>.
+    # This post-processing step moves it to the correct location.
+    # Proven working: identical to the manual fix that Bertan confirmed works.
+    fixed_bytes = _fix_pptx_backgrounds(raw_bytes)
+    return fixed_bytes
+
+
+def _fix_pptx_backgrounds(pptx_bytes: bytes) -> bytes:
+    """Post-process PPTX: move <p:bg> from inside <p:cSld> to <p:sld> level."""
+    import zipfile as zf
+    import re
+
+    src = io.BytesIO(pptx_bytes)
+    dst = io.BytesIO()
+
+    with zf.ZipFile(src, 'r') as zin, zf.ZipFile(dst, 'w', zf.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+
+            if re.match(r'ppt/slides/slide\d+\.xml$', item.filename):
+                xml = data.decode('utf-8')
+
+                # Extract bg from inside <p:cSld> if present
+                bg_match = re.search(
+                    r'(<p:cSld[^>]*>)\s*(<p:bg[^>]*>.*?</p:bg>)',
+                    xml, re.DOTALL
+                )
+                if bg_match:
+                    cSld_tag = bg_match.group(1)
+                    bg_element = bg_match.group(2)
+
+                    # Strip inline xmlns from bg (PowerPoint doesn't need them at sld level)
+                    bg_clean = re.sub(r'\s+xmlns:[a-z]="[^"]*"', '', bg_element)
+
+                    # Remove bg from inside cSld
+                    xml = xml.replace(bg_match.group(0), cSld_tag)
+
+                    # Insert bg before <p:cSld> (direct child of <p:sld>)
+                    xml = xml.replace(cSld_tag, bg_clean + cSld_tag)
+
+                    data = xml.encode('utf-8')
+
+            zout.writestr(item, data)
+
+    dst.seek(0)
+    return dst.read()
 
 
 # ── NETLIFY HANDLER ───────────────────────────────────────────────────────
