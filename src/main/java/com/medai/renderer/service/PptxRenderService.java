@@ -47,6 +47,9 @@ public class PptxRenderService {
                 case "TABLE"           -> buildTable(slide, sd);
                 case "CHART_KM"        -> buildKmChart(slide, pptx, sd);
                 case "CHART_BAR"       -> buildBarChart(slide, pptx, sd);
+                case "CHART_WATERFALL" -> buildWaterfallChart(slide, pptx, sd);
+                case "CHART_FOREST"    -> buildForestPlot(slide, pptx, sd);
+                case "CHART_SWIMMER"   -> buildSwimmerPlot(slide, pptx, sd);
                 case "SWOT"            -> buildSwot(slide, sd);
                 case "TIMELINE"        -> buildTimeline(slide, sd);
                 case "KPI_DASHBOARD"   -> buildKpi(slide, sd);
@@ -472,6 +475,60 @@ public class PptxRenderService {
                 PptxUtils.addImage(sl, pptx, png, 0.5, 1.10, 12.3, 5.3);
             } catch (Exception e) {
                 PptxUtils.addText(sl, "Chart error: " + e.getMessage(),
+                    0.6, 3.0, 12.1, 1.0, 12.0, ThemeConfig.FONT_BODY,
+                    ThemeConfig.HEX_ROSE, false, TextParagraph.TextAlign.CENTER);
+            }
+        }
+        addRefFooter(sl, d);
+        PptxUtils.addFooter(sl, confBadge(d));
+    }
+
+    /** Waterfall plot — best response per patient */
+    private void buildWaterfallChart(XSLFSlide sl, XMLSlideShow pptx, SlideData d) {
+        PptxUtils.addHeader(sl, d.contentStr("title"), d.getSection());
+        Map<String, Object> cd = d.contentMap("chartData");
+        if (!cd.isEmpty()) {
+            try {
+                byte[] png = chartService.generateWaterfallPlot(cd);
+                PptxUtils.addImage(sl, pptx, png, 0.5, 1.10, 12.3, 5.3);
+            } catch (Exception e) {
+                PptxUtils.addText(sl, "Waterfall error: " + e.getMessage(),
+                    0.6, 3.0, 12.1, 1.0, 12.0, ThemeConfig.FONT_BODY,
+                    ThemeConfig.HEX_ROSE, false, TextParagraph.TextAlign.CENTER);
+            }
+        }
+        addRefFooter(sl, d);
+        PptxUtils.addFooter(sl, confBadge(d));
+    }
+
+    /** Forest plot — subgroup hazard ratio analysis */
+    private void buildForestPlot(XSLFSlide sl, XMLSlideShow pptx, SlideData d) {
+        PptxUtils.addHeader(sl, d.contentStr("title"), d.getSection());
+        Map<String, Object> cd = d.contentMap("chartData");
+        if (!cd.isEmpty()) {
+            try {
+                byte[] png = chartService.generateForestPlot(cd);
+                PptxUtils.addImage(sl, pptx, png, 0.3, 1.10, 12.7, 5.5);
+            } catch (Exception e) {
+                PptxUtils.addText(sl, "Forest plot error: " + e.getMessage(),
+                    0.6, 3.0, 12.1, 1.0, 12.0, ThemeConfig.FONT_BODY,
+                    ThemeConfig.HEX_ROSE, false, TextParagraph.TextAlign.CENTER);
+            }
+        }
+        addRefFooter(sl, d);
+        PptxUtils.addFooter(sl, confBadge(d));
+    }
+
+    /** Swimmer plot — patient-level response duration */
+    private void buildSwimmerPlot(XSLFSlide sl, XMLSlideShow pptx, SlideData d) {
+        PptxUtils.addHeader(sl, d.contentStr("title"), d.getSection());
+        Map<String, Object> cd = d.contentMap("chartData");
+        if (!cd.isEmpty()) {
+            try {
+                byte[] png = chartService.generateSwimmerPlot(cd);
+                PptxUtils.addImage(sl, pptx, png, 0.3, 1.10, 12.7, 5.5);
+            } catch (Exception e) {
+                PptxUtils.addText(sl, "Swimmer plot error: " + e.getMessage(),
                     0.6, 3.0, 12.1, 1.0, 12.0, ThemeConfig.FONT_BODY,
                     ThemeConfig.HEX_ROSE, false, TextParagraph.TextAlign.CENTER);
             }
