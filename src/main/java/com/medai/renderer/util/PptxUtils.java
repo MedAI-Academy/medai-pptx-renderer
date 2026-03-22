@@ -175,20 +175,22 @@ public class PptxUtils {
     // TABLES
     // ═══════════════════════════════════════════════════════════
 
-    /** Create a styled data table */
+    /** Create a styled data table with smart column widths */
     public static XSLFTable addTable(XSLFSlide slide,
                                       String[] headers, String[][] rows,
                                       double x, double y, double w, double rowH) {
         int numRows = rows.length + 1; // +1 for header
         int numCols = headers.length;
-        double colW = w / numCols;
+
+        // Smart column width allocation based on content
+        double[] colWidths = computeColumnWidths(headers, rows, w);
 
         XSLFTable table = slide.createTable(numRows, numCols);
         table.setAnchor(new Rectangle2D.Double(x * 72, y * 72, w * 72, rowH * numRows * 72));
 
         // Set column widths
         for (int c = 0; c < numCols; c++) {
-            table.setColumnWidth(c, colW * 72);
+            table.setColumnWidth(c, colWidths[c] * 72);
         }
 
         // Header row
@@ -211,9 +213,74 @@ public class PptxUtils {
         return table;
     }
 
+    /** Compute proportional column widths based on content length */
+    private static double[] computeColumnWidths(String[] headers, String[][] rows, double totalW) {
+        int n = headers.length;
+        double[] weights = new double[n];
+
+        // Base weight from header length
+        for (int c = 0; c < n; c++) {
+            weights[c] = Math.max(3.0, headers[c].length());
+        }
+
+        // Adjust weights based on max content length in each column (sample first 5 rows)
+        for (int r = 0; r < Math.min(rows.length, 5); r++) {
+            for (int c = 0; c < Math.min(rows[r].length, n); c++) {
+                double contentLen = rows[r][c] != null ? rows[r][c].length() : 0;
+                weights[c] = Math.max(weights[c], contentLen * 0.8);
+            }
+        }
+
+        // Known narrow columns (by header name)
+        for (int c = 0; c < n; c++) {
+            String h = headers[c].toLowerCase();
+            if (h.equals("n") || h.equals("phase") || h.equals("status") || h.equals("si")
+                || h.equals("budget") || h.equals("orr") || h.equals("year")) {
+                weights[c] = Math.min(weights[c], 8.0);  // Cap narrow columns
+            }
+        }
+
+        // Normalize to total width with minimum 0.8" per column
+        double sum = 0;
+        for (double w2 : weights) sum += w2;
+        double[] widths = new double[n];
+        double minCol = 0.8;
+        double remaining = totalW;
+        int capped = 0;
+
+        // First pass: cap minimum widths
+        for (int c = 0; c < n; c++) {
+            double proposed = (weights[c] / sum) * totalW;
+            if (proposed < minCol) {
+                widths[c] = minCol;
+                remaining -= minCol;
+                capped++;
+            }
+        }
+
+        // Second pass: distribute remaining width
+        double uncappedSum = 0;
+        for (int c = 0; c < n; c++) {
+            if (widths[c] == 0) uncappedSum += weights[c];
+        }
+        for (int c = 0; c < n; c++) {
+            if (widths[c] == 0) {
+                widths[c] = (weights[c] / uncappedSum) * remaining;
+            }
+        }
+
+        return widths;
+    }
+
     private static void setCellText(XSLFTableCell cell, String text,
                                      double fontSize, String colorHex, boolean bold) {
         cell.clearText();
+        cell.setVerticalAlignment(org.apache.poi.sl.usermodel.VerticalAlignment.TOP);
+        // Add cell padding for breathing room
+        cell.setTopInset(4.0);
+        cell.setBottomInset(4.0);
+        cell.setLeftInset(6.0);
+        cell.setRightInset(6.0);
         XSLFTextParagraph para = cell.addNewTextParagraph();
         XSLFTextRun run = para.addNewTextRun();
         run.setText(text != null ? text : "");

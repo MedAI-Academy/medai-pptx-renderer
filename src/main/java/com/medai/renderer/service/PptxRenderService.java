@@ -79,8 +79,28 @@ public class PptxRenderService {
 
     private void buildContent(XSLFSlide sl, SlideData d) {
         PptxUtils.addHeader(sl, d.contentStr("title"), d.getSection());
-        String body=d.contentStr("body"); if(!body.isEmpty()) PptxUtils.addText(sl,body,0.6,1.15,12.1,5.2,12.0,ThemeConfig.FONT_BODY,ThemeConfig.HEX_TEXT,false,TextParagraph.TextAlign.LEFT);
-        List<Map<String,Object>> items=d.contentList("items"); if(!items.isEmpty()&&body.isEmpty()) { String[] t=items.stream().map(m->m.getOrDefault("text",m.toString()).toString()).toArray(String[]::new); PptxUtils.addBulletText(sl,t,0.6,1.15,12.1,5.2,12.0,ThemeConfig.HEX_TEXT); }
+        String body=d.contentStr("body");
+        if(!body.isEmpty()) {
+            // Detect if body contains bullet-like lines
+            String[] lines = body.split("\n");
+            boolean hasBullets = false;
+            for (String line : lines) {
+                if (line.trim().startsWith("•") || line.trim().startsWith("▸") || line.trim().matches("^\\d+\\.\\s.*")) {
+                    hasBullets = true; break;
+                }
+            }
+            if (hasBullets && lines.length > 2) {
+                // Render as multi-paragraph with proper spacing
+                PptxUtils.addText(sl, body, 0.6, 1.15, 12.1, 5.2, 11.5, ThemeConfig.FONT_BODY, ThemeConfig.HEX_TEXT, false, TextParagraph.TextAlign.LEFT);
+            } else {
+                PptxUtils.addText(sl, body, 0.6, 1.15, 12.1, 5.2, 12.5, ThemeConfig.FONT_BODY, ThemeConfig.HEX_TEXT, false, TextParagraph.TextAlign.LEFT);
+            }
+        }
+        List<Map<String,Object>> items=d.contentList("items");
+        if(!items.isEmpty()&&body.isEmpty()) {
+            String[] t=items.stream().map(m->m.getOrDefault("text",m.toString()).toString()).toArray(String[]::new);
+            PptxUtils.addBulletText(sl,t,0.6,1.15,12.1,5.2,12.0,ThemeConfig.HEX_TEXT);
+        }
         addRefFooter(sl,d); PptxUtils.addFooter(sl,confBadge(d));
     }
 
@@ -96,8 +116,38 @@ public class PptxRenderService {
 
     private void buildCards(XSLFSlide sl, SlideData d) {
         PptxUtils.addHeader(sl,d.contentStr("title"),d.getSection());
-        List<Map<String,Object>> cards=d.contentList("cards"); int count=Math.min(cards.size(),6), cols=count<=4?2:3; double gap=0.20, cW=(12.1-(cols-1)*gap)/cols, cH=count<=cols?4.8:2.3;
-        for(int i=0;i<count;i++){Map<String,Object> c=cards.get(i);int col=i%cols,row=i/cols;double cx=0.6+col*(cW+gap),cy=1.20+row*(cH+gap);String ac=ThemeConfig.ACCENT_CYCLE[i%ThemeConfig.ACCENT_CYCLE.length];PptxUtils.addRect(sl,cx,cy,cW,cH,ThemeConfig.HEX_SURFACE);PptxUtils.addRect(sl,cx,cy,cW,0.05,ac);PptxUtils.addText(sl,c.getOrDefault("title","").toString(),cx+0.15,cy+0.12,cW-0.30,0.40,12.0,ThemeConfig.FONT_TITLE,ThemeConfig.HEX_WHITE,true,TextParagraph.TextAlign.LEFT);PptxUtils.addText(sl,c.getOrDefault("body","").toString(),cx+0.15,cy+0.55,cW-0.30,cH-0.70,10.0,ThemeConfig.FONT_BODY,ThemeConfig.HEX_TEXT,false,TextParagraph.TextAlign.LEFT);}
+        List<Map<String,Object>> cards=d.contentList("cards");
+        int count=Math.min(cards.size(),6);
+        if(count==0){buildContent(sl,d);return;}
+        int cols = count <= 2 ? 2 : count <= 4 ? 2 : 3;
+        int rows = (count + cols - 1) / cols;
+        double gap = 0.18;
+        double cW = (12.1 - (cols - 1) * gap) / cols;
+        double availH = 5.5;  // Content area height
+        double cH = (availH - (rows - 1) * gap) / rows;
+
+        for (int i = 0; i < count; i++) {
+            Map<String,Object> c = cards.get(i);
+            int col = i % cols, row = i / cols;
+            double cx = 0.6 + col * (cW + gap);
+            double cy = 1.15 + row * (cH + gap);
+            String ac = ThemeConfig.ACCENT_CYCLE[i % ThemeConfig.ACCENT_CYCLE.length];
+
+            // Card background
+            PptxUtils.addRect(sl, cx, cy, cW, cH, ThemeConfig.HEX_SURFACE);
+            // Top accent bar
+            PptxUtils.addRect(sl, cx, cy, cW, 0.06, ac);
+            // Title — larger, accent-colored
+            PptxUtils.addText(sl, c.getOrDefault("title","").toString(),
+                cx + 0.18, cy + 0.14, cW - 0.36, 0.45,
+                14.0, ThemeConfig.FONT_TITLE, ThemeConfig.HEX_WHITE, true,
+                TextParagraph.TextAlign.LEFT);
+            // Body — slightly larger, better wrapping
+            PptxUtils.addText(sl, c.getOrDefault("body","").toString(),
+                cx + 0.18, cy + 0.62, cW - 0.36, cH - 0.80,
+                11.0, ThemeConfig.FONT_BODY, ThemeConfig.HEX_TEXT, false,
+                TextParagraph.TextAlign.LEFT);
+        }
         addRefFooter(sl,d); PptxUtils.addFooter(sl,confBadge(d));
     }
 
@@ -106,7 +156,7 @@ public class PptxRenderService {
         Map<String,Object> td=d.contentMap("table"); if(td.isEmpty()){buildContent(sl,d);return;}
         @SuppressWarnings("unchecked") List<String> h=((List<Object>)td.getOrDefault("headers",List.of())).stream().map(Object::toString).toList();
         @SuppressWarnings("unchecked") List<List<String>> r=((List<List<Object>>)td.getOrDefault("rows",List.of())).stream().map(row->row.stream().map(Object::toString).toList()).toList();
-        if(h.isEmpty()){buildContent(sl,d);return;} String[] hA=h.toArray(new String[0]); int mx=Math.min(r.size(),12); String[][] rA=new String[mx][]; for(int i=0;i<mx;i++)rA[i]=r.get(i).toArray(new String[0]);
+        if(h.isEmpty()){buildContent(sl,d);return;} String[] hA=h.toArray(new String[0]); int mx=r.size(); String[][] rA=new String[mx][]; for(int i=0;i<mx;i++)rA[i]=r.get(i).toArray(new String[0]);
         PptxUtils.addTable(sl,hA,rA,0.5,1.15,12.3,0.38);
         addRefFooter(sl,d); PptxUtils.addFooter(sl,confBadge(d));
     }
