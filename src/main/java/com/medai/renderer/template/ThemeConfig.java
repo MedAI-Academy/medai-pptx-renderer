@@ -5,6 +5,13 @@ import java.awt.Color;
 /**
  * MedAI Brand Design System — colors, fonts, and spacing constants.
  * All slide builders use this single source of truth.
+ *
+ * v2.0 — Prezent-Premium Upgrade:
+ * - SWOT quadrant colors (deep saturated)
+ * - Zebra-stripe table colors
+ * - Confidence badge colors (green/yellow/red)
+ * - Icon circle colors for CONTENT_CARDS
+ * - Lighter surface variant for more visual depth
  */
 public class ThemeConfig {
 
@@ -16,6 +23,7 @@ public class ThemeConfig {
     public static final String HEX_DARK    = "0B1A3B";  // Title, dividers
     public static final String HEX_NAVY    = "0D2B4E";  // Content dark BG
     public static final String HEX_SURFACE = "163060";  // Cards, boxes
+    public static final String HEX_SURFACE_LT = "1C3A6E"; // Cards lighter (hover/depth)
     public static final String HEX_LIGHT   = "F0F4FF";  // Content light BG
 
     // Accent colors
@@ -32,6 +40,52 @@ public class ThemeConfig {
     public static final String HEX_DIM     = "4A6A9A";  // Tertiary text
     public static final String HEX_INK     = "1E293B";  // Text on light BG
     public static final String HEX_SLATE   = "64748B";  // Muted on light BG
+
+    // ── SWOT Quadrant Colors (deep, saturated, elegant) ──
+    public static final String HEX_SWOT_S  = "0F4D3F";  // Strengths — deep teal
+    public static final String HEX_SWOT_W  = "4A1942";  // Weaknesses — deep rose/plum
+    public static final String HEX_SWOT_O  = "1A2F6F";  // Opportunities — deep blue
+    public static final String HEX_SWOT_T  = "4A2F1A";  // Threats — deep amber/brown
+
+    // ── Zebra-Stripe Table Colors ──
+    public static final String HEX_ZEBRA_EVEN = "152C50";  // Slightly lighter than navy
+    public static final String HEX_ZEBRA_ODD  = "0D2B4E";  // Same as navy (base)
+
+    // ── Confidence Score Badge Colors ──
+    public static final String HEX_CONF_GREEN  = "22C55E";  // Score ≥ 95%
+    public static final String HEX_CONF_YELLOW = "F59E0B";  // Score 85–94%
+    public static final String HEX_CONF_RED    = "EF4444";  // Score < 85%
+
+    // ── Icon Circle Colors (for CONTENT_CARDS headers) ──
+    public static final String HEX_ICON_TEAL   = "0D9488";  // Medical / Disease
+    public static final String HEX_ICON_GOLD   = "D97706";  // Data / Statistics
+    public static final String HEX_ICON_VIOLET = "7C3AED";  // Science / Molecular
+    public static final String HEX_ICON_ROSE   = "DB2777";  // Narrative / Story
+    public static final String HEX_ICON_ACCENT = "6366F1";  // Strategy / Target
+    public static final String HEX_ICON_CYAN   = "0891B2";  // Timeline / Calendar
+
+    // ── Unicode Icon Symbols (PPTX-safe via Segoe UI Symbol) ──
+    public static final String ICON_MEDICAL  = "\u2720";  // ✠ Maltese Cross
+    public static final String ICON_DATA     = "\u25A3";  // ▣ White Square with Square
+    public static final String ICON_SCIENCE  = "\u2318";  // ⌘ Place of Interest
+    public static final String ICON_BOOK     = "\u2756";  // ❖ Black Diamond Minus White X
+    public static final String ICON_TARGET   = "\u25CE";  // ◎ Bullseye
+    public static final String ICON_CALENDAR = "\u25A3";  // ▣ Square
+    public static final String ICON_CHECK    = "\u2714";  // ✔ Check Mark
+    public static final String ICON_WARNING  = "\u26A0";  // ⚠ Warning
+    public static final String ICON_ARROW_UP = "\u25B2";  // ▲ Up Triangle
+    public static final String ICON_CIRCLE   = "\u25CF";  // ● Filled Circle
+
+    // Icon cycle for card headers (matches ACCENT_CYCLE order)
+    public static final String[] ICON_CYCLE = {
+        ICON_TARGET, ICON_DATA, ICON_SCIENCE, ICON_BOOK,
+        ICON_MEDICAL, ICON_CALENDAR, ICON_CHECK, ICON_ARROW_UP
+    };
+    // Icon circle BG colors matching ICON_CYCLE
+    public static final String[] ICON_BG_CYCLE = {
+        HEX_ICON_ACCENT, HEX_ICON_GOLD, HEX_ICON_VIOLET, HEX_ICON_ROSE,
+        HEX_ICON_TEAL, HEX_ICON_CYAN, HEX_ICON_ACCENT, HEX_ICON_TEAL
+    };
 
     // java.awt.Color equivalents (for JFreeChart)
     public static final Color CLR_DARK    = hex(HEX_DARK);
@@ -58,6 +112,7 @@ public class ThemeConfig {
     public static final String FONT_TITLE = "Calibri";
     public static final String FONT_BODY  = "Calibri";
     public static final String FONT_MONO  = "Consolas";
+    public static final String FONT_ICON  = "Segoe UI Symbol";  // Fallback: Arial Unicode MS
 
     // Font sizes (in points)
     public static final double SIZE_TITLE     = 36.0;
@@ -90,10 +145,22 @@ public class ThemeConfig {
 
     /** Convert 6-char hex string to java.awt.Color */
     public static Color hex(String hex) {
+        if (hex == null || hex.length() < 6) return Color.WHITE;
         return new Color(
             Integer.parseInt(hex.substring(0, 2), 16),
             Integer.parseInt(hex.substring(2, 4), 16),
             Integer.parseInt(hex.substring(4, 6), 16)
+        );
+    }
+
+    /** Convert 6-char hex + alpha (0-255) to Color with transparency */
+    public static Color hexAlpha(String hex, int alpha) {
+        if (hex == null || hex.length() < 6) return new Color(255, 255, 255, alpha);
+        return new Color(
+            Integer.parseInt(hex.substring(0, 2), 16),
+            Integer.parseInt(hex.substring(2, 4), 16),
+            Integer.parseInt(hex.substring(4, 6), 16),
+            alpha
         );
     }
 
@@ -113,5 +180,12 @@ public class ThemeConfig {
             case "F0F4FF", "FFFFFF" -> HEX_INK;
             default -> HEX_TEXT;
         };
+    }
+
+    /** Get confidence badge color based on score */
+    public static String confColor(double score) {
+        if (score >= 95) return HEX_CONF_GREEN;
+        if (score >= 85) return HEX_CONF_YELLOW;
+        return HEX_CONF_RED;
     }
 }
