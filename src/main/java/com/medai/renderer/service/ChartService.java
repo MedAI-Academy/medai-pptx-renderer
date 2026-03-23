@@ -17,8 +17,7 @@ import java.util.List;
 /**
  * Chart rendering service — delegates to Python Chart Service for publication-quality output.
  * Falls back to Java2D if Python service is unavailable.
- *
- * v4.0 — Hybrid: Python primary, Java2D fallback.
+ * v4.0 — Hybrid: Python primary, Java2D fallback. ALL original methods preserved.
  */
 @Service
 public class ChartService {
@@ -28,9 +27,6 @@ public class ChartService {
     @Autowired
     private PythonChartClient pythonCharts;
 
-    // ═══════════════════════════════════════════════════════
-    // Java2D constants (kept for fallback only)
-    // ═══════════════════════════════════════════════════════
     private static final int W = 1800, H = 1050;
     private static final int ML = 120, MR = 40, MT = 50, MB_PLOT = 60;
 
@@ -69,14 +65,9 @@ public class ChartService {
         } catch (Exception e) {
             log.error("Python chart service failed, falling back to Java2D: {}", e.getMessage());
         }
-
-        // ── Java2D fallback (original code) ──────────────────
         return generateKaplanMeierJava2D(data);
     }
 
-    /**
-     * Original Java2D KM renderer — kept as fallback only.
-     */
     @SuppressWarnings("unchecked")
     private byte[] generateKaplanMeierJava2D(Map<String, Object> data) throws Exception {
         List<Map<String, Object>> arms = (List<Map<String, Object>>) data.get("arms");
@@ -149,47 +140,154 @@ public class ChartService {
         g.drawLine(ML, pB, ML + pW, pB); g.drawLine(ML, MT, ML, pB);
         g.setFont(F_TICK);
         for (double x = 0; x <= xMax; x += xStep) { int px = xPx(x, pW, xMax); g.drawLine(px, pB, px, pB + 5); cStr(g, fmtI(x), px, pB + 20); }
-        g.setFont(F_AXIS); g.setColor(TEXT_CLR); cStr(g, xlabel, ML + pW / 2, pB + 45); rCStr(g, ylabel, ML - 45, MT + pH / 2);
+        for (double y = 0.0; y <= 1.01; y += 0.2) { int py = yPx(y, pH); g.drawLine(ML - 5, py, ML, py); rStr(g, String.format("%.1f", y), ML - 10, py + 4); }
+        g.setFont(F_AXIS); g.setColor(TEXT_CLR); cStr(g, xlabel, ML + pW / 2, pB + 45);
+        AffineTransform ot = g.getTransform(); g.rotate(-Math.PI / 2); cStr(g, ylabel, -(MT + pH / 2), ML - 65); g.setTransform(ot);
 
-        // At-risk table
-        if (showAR) {
-            int arY = pB + 55; g.setFont(F_ARH); g.setColor(TEXT_CLR); g.drawString("No. at Risk", ML, arY);
-            for (int a = 0; a < arms.size(); a++) {
-                Map<String, Object> arm = arms.get(a); List<Number> ar = nl(arm, "atRisk");
-                int ry = arY + 18 + a * 20; g.setFont(F_AR); g.setColor(armClr(arm, a));
-                g.drawString(s(arm, "label", "Arm " + (a + 1)), ML, ry);
-                g.setColor(TEXT_CLR);
-                for (int t = 0; t < ar.size() && t * xStep <= xMax; t++) { cStr(g, ar.get(t).toString(), xPx(t * xStep, pW, xMax), ry); }
-            }
+        // Legend
+        int lx = ML + pW - 280, ly = MT + 15, lH = arms.size() * 22 + 16;
+        g.setColor(new Color(22, 48, 96, 200)); g.fillRoundRect(lx, ly, 260, lH, 8, 8);
+        g.setColor(new Color(74, 106, 154, 100)); g.drawRoundRect(lx, ly, 260, lH, 8, 8);
+        int ty = ly + 16;
+        for (int i = 0; i < arms.size(); i++) {
+            Map<String, Object> arm = arms.get(i); Color c = armClr(arm, i);
+            String name = s(arm, "name", "Arm " + (i + 1));
+            Number med = (Number) arm.get("median");
+            g.setColor(c); g.setStroke(new BasicStroke(2.5f)); g.drawLine(lx + 12, ty, lx + 40, ty);
+            g.setFont(F_LEGB); g.setColor(TEXT_CLR);
+            String label = name + (med != null ? " (med: " + fmtN(med.doubleValue()) + " mo)" : "");
+            if (label.length() > 35) label = label.substring(0, 32) + "...";
+            g.drawString(label, lx + 48, ty + 4); ty += 22;
         }
 
         // HR box
         if (!hrText.isEmpty()) {
+            String[] hrl = hrText.split(";\\s*");
             g.setFont(F_HR); FontMetrics fm = g.getFontMetrics();
-            String[] lines = hrText.split("\\n|\\|");
-            int boxW = 0; for (String l : lines) boxW = Math.max(boxW, fm.stringWidth(l));
-            boxW += 24; int boxH = lines.length * 18 + 14, bx = ML + pW - boxW - 10, by = MT + pH / 2;
-            g.setColor(new Color(255, 255, 255, 230)); g.fillRoundRect(bx, by, boxW, boxH, 6, 6);
-            g.setColor(AXIS_CLR); g.setStroke(new BasicStroke(0.8f)); g.drawRoundRect(bx, by, boxW, boxH, 6, 6);
-            g.setColor(TEXT_CLR); int ty = by + 18;
-            for (String l : lines) { g.drawString(l.trim(), bx + 12, ty); ty += 18; }
+            int bw = 0; for (String l : hrl) bw = Math.max(bw, fm.stringWidth(l.trim()));
+            bw += 24; int bh = hrl.length * 18 + 14;
+            int bx = ML + 15, by = pB - bh - 15;
+            g.setColor(new Color(22, 48, 96, 220)); g.fillRoundRect(bx, by, bw, bh, 6, 6);
+            g.setColor(ThemeConfig.CLR_TEAL); g.setStroke(new BasicStroke(1.5f)); g.drawLine(bx, by, bx, by + bh);
+            int hty = by + 16;
+            for (int i = 0; i < hrl.length; i++) {
+                g.setFont(i == 0 ? F_HRB : F_HR); g.setColor(i == 0 ? ThemeConfig.CLR_TEAL : TEXT_CLR);
+                g.drawString(hrl[i].trim(), bx + 10, hty); hty += 18;
+            }
+        }
+
+        // At-risk table
+        if (showAR) {
+            g.setFont(F_ARH); g.setColor(TEXT_CLR); g.drawString("No. at risk", ML - 100, pB + MB_PLOT - 8);
+            for (int a = 0; a < arms.size(); a++) {
+                Map<String, Object> arm = arms.get(a); Color c = armClr(arm, a);
+                List<Number> ar = nl(arm, "atRisk");
+                int ry = pB + MB_PLOT + 7 + a * 20;
+                g.setFont(F_AR); g.setColor(c);
+                String sn = s(arm, "name", "Arm"); if (sn.length() > 18) sn = sn.substring(0, 15) + "...";
+                rStr(g, sn, ML - 10, ry + 4);
+                g.setColor(TEXT_CLR);
+                int idx = 0; for (double x = 0; x <= xMax && idx < ar.size(); x += xStep) {
+                    cStr(g, String.valueOf(ar.get(idx).intValue()), xPx(x, pW, xMax), ry + 4); idx++;
+                }
+            }
         }
 
         g.dispose(); return toPng(img);
     }
 
     // ═════════════════════════════════════════════
-    // 4. FOREST PLOT — Python primary, Java2D fallback
+    // 2. BAR CHART (Java2D — no Python equivalent yet)
+    // ═════════════════════════════════════════════
+    @SuppressWarnings("unchecked")
+    public byte[] generateBarChart(Map<String, Object> data) throws Exception {
+        List<Map<String, Object>> bars = (List<Map<String, Object>>) data.getOrDefault("bars", List.of());
+        String ylabel = s(data, "ylabel", "Response Rate (%)");
+        boolean showVal = b(data, "showValues", true);
+        int nn = bars.size(), pW = W - ML - MR, pH = H - MT - 100, pB = MT + pH;
+        double yMax = 0; for (Map<String, Object> bb : bars) yMax = Math.max(yMax, n(bb, "value", 0));
+        yMax = Math.ceil(yMax / 10) * 10 + 10; if (yMax > 100) yMax = 110;
+        double bW = Math.min(80, (double) pW / nn * 0.6), gap = (pW - nn * bW) / (nn + 1);
+
+        BufferedImage img = new BufferedImage(W, H, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics(); aa(g);
+        g.setColor(BG); g.fillRect(0, 0, W, H);
+        g.setColor(GRID); g.setStroke(new BasicStroke(0.5f));
+        for (double y = 10; y < yMax; y += 10) { int py = (int)(pB - (y / yMax) * pH); g.drawLine(ML, py, ML + pW, py); }
+
+        for (int i = 0; i < nn; i++) {
+            Map<String, Object> bb = bars.get(i); double val = n(bb, "value", 0); Color c = barClr(bb, i);
+            double bx = ML + gap + i * (bW + gap); int barH = (int)((val / yMax) * pH), by = pB - barH;
+            g.setColor(c); g.fillRoundRect((int) bx, by, (int) bW, barH, 4, 4); g.fillRect((int) bx, by + barH - 4, (int) bW, 4);
+            double ciL = n(bb, "ci_low", 0), ciH = n(bb, "ci_high", 0);
+            if (ciL > 0 && ciH > 0) { int cx = (int)(bx + bW / 2); g.setColor(TEXT_CLR); g.setStroke(new BasicStroke(1.5f));
+                int cyL = (int)(pB - (ciL / yMax) * pH), cyH = (int)(pB - (ciH / yMax) * pH);
+                g.drawLine(cx, cyL, cx, cyH); g.drawLine(cx - 4, cyL, cx + 4, cyL); g.drawLine(cx - 4, cyH, cx + 4, cyH); }
+            if (showVal) { g.setColor(TEXT_CLR); g.setFont(F_LEGB); cStr(g, String.format("%.0f%%", val), (int)(bx + bW / 2), by - 10); }
+            g.setColor(TEXT_CLR); g.setFont(F_TICK); String lb = s(bb, "label", ""); if (lb.length() > 15) lb = lb.substring(0, 12) + "...";
+            cStr(g, lb, (int)(bx + bW / 2), pB + 18);
+        }
+        g.setColor(AXIS_CLR); g.setStroke(new BasicStroke(1.5f)); g.drawLine(ML, pB, ML + pW, pB); g.drawLine(ML, MT, ML, pB);
+        g.setFont(F_TICK); for (double y = 0; y <= yMax; y += 20) { int py = (int)(pB - (y / yMax) * pH); g.drawLine(ML - 5, py, ML, py); rStr(g, String.format("%.0f", y), ML - 10, py + 4); }
+        g.setFont(F_AXIS); g.setColor(TEXT_CLR); AffineTransform ot = g.getTransform(); g.rotate(-Math.PI / 2); cStr(g, ylabel, -(MT + pH / 2), ML - 70); g.setTransform(ot);
+        g.dispose(); return toPng(img);
+    }
+
+    // ═════════════════════════════════════════════
+    // 3. WATERFALL PLOT (Java2D — no Python equivalent yet)
+    // ═════════════════════════════════════════════
+    @SuppressWarnings("unchecked")
+    public byte[] generateWaterfallPlot(Map<String, Object> data) throws Exception {
+        List<Map<String, Object>> pts = (List<Map<String, Object>>) data.get("patients");
+        String ylabel = s(data, "ylabel", "Best Change from Baseline (%)");
+        double thPR = n(data, "threshold_pr", -30), thPD = n(data, "threshold_pd", 20);
+        pts.sort(Comparator.comparingDouble(p -> n(p, "change", 0)));
+        int nn = pts.size(), pW = W - ML - MR, pH = H - MT - 120, pB = MT + pH;
+        double yMin = -100, yMax = 100;
+        for (Map<String, Object> p : pts) { double v = n(p, "change", 0); yMin = Math.min(yMin, v - 5); yMax = Math.max(yMax, v + 5); }
+        yMin = Math.floor(yMin / 20) * 20; yMax = Math.ceil(yMax / 20) * 20;
+        double bW = Math.max(2, (double) pW / nn - 1);
+
+        BufferedImage img = new BufferedImage(W, H, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics(); aa(g); g.setColor(BG); g.fillRect(0, 0, W, H);
+        int zY = wfY(0, pH, yMin, yMax);
+        g.setColor(AXIS_CLR); g.setStroke(new BasicStroke(1.5f)); g.drawLine(ML, zY, ML + pW, zY);
+
+        // Threshold lines
+        g.setStroke(new BasicStroke(1f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 10f, new float[]{8f, 4f}, 0f));
+        g.setColor(new Color(52, 168, 83, 150)); int prY = wfY(thPR, pH, yMin, yMax); g.drawLine(ML, prY, ML + pW, prY);
+        g.setFont(F_TICK); g.drawString(String.format("%.0f%%", thPR), ML + pW + 5, prY + 4);
+        g.setColor(new Color(234, 67, 53, 150)); int pdY = wfY(thPD, pH, yMin, yMax); g.drawLine(ML, pdY, ML + pW, pdY);
+        g.drawString(String.format("+%.0f%%", thPD), ML + pW + 5, pdY + 4);
+
+        for (int i = 0; i < nn; i++) {
+            Map<String, Object> p = pts.get(i); double ch = n(p, "change", 0);
+            String rsp = s(p, "response", ch <= thPR ? "PR" : ch >= thPD ? "PD" : "SD");
+            Color c = rspClr(rsp); g.setColor(c);
+            double bx = ML + i * ((double) pW / nn); int py = wfY(ch, pH, yMin, yMax);
+            if (ch <= 0) g.fillRect((int) bx, zY, (int) Math.max(bW, 2), py - zY);
+            else g.fillRect((int) bx, py, (int) Math.max(bW, 2), zY - py);
+        }
+        g.setColor(AXIS_CLR); g.setStroke(new BasicStroke(1.5f)); g.drawLine(ML, MT, ML, pB);
+        g.setFont(F_TICK); for (double y = yMin; y <= yMax; y += 20) { int py = wfY(y, pH, yMin, yMax); g.drawLine(ML - 5, py, ML, py); rStr(g, String.format("%.0f", y), ML - 10, py + 4); }
+        g.setFont(F_AXIS); g.setColor(TEXT_CLR); AffineTransform ot = g.getTransform(); g.rotate(-Math.PI / 2); cStr(g, ylabel, -(MT + pH / 2), ML - 70); g.setTransform(ot);
+        cStr(g, "Patients", ML + pW / 2, pB + 35);
+
+        // Legend
+        String[][] leg = {{"CR", "34A853"}, {"PR", "4285F4"}, {"SD", "FFA726"}, {"PD", "EA4335"}};
+        int llx = ML + pW - 200, lly = MT + 10;
+        g.setColor(new Color(22, 48, 96, 200)); g.fillRoundRect(llx, lly, 120, leg.length * 22 + 10, 8, 8);
+        int lty = lly + 18; g.setFont(F_LEG);
+        for (String[] it : leg) { g.setColor(ThemeConfig.hex(it[1])); g.fillRect(llx + 10, lty - 10, 14, 10); g.setColor(TEXT_CLR); g.drawString(it[0], llx + 30, lty); lty += 22; }
+
+        g.dispose(); return toPng(img);
+    }
+
+    // ═════════════════════════════════════════════
+    // 4. FOREST PLOT (Java2D — Python coming soon)
     // ═════════════════════════════════════════════
     @SuppressWarnings("unchecked")
     public byte[] generateForestPlot(Map<String, Object> data) throws Exception {
-        // Python endpoint not yet ready — use Java2D directly
-        // TODO: delegate to pythonCharts.fetchForestPlot(data) when ready
-        return generateForestPlotJava2D(data);
-    }
-
-    @SuppressWarnings("unchecked")
-    private byte[] generateForestPlotJava2D(Map<String, Object> data) throws Exception {
         List<Map<String, Object>> subs = (List<Map<String, Object>>) data.get("subgroups");
         String favD = s(data, "favorsDrug", "Favors Drug"), favC = s(data, "favorsControl", "Favors Control");
         int nn = subs.size(), rH = 28, pSX = W / 2 + 40, pW2 = W / 2 - 80;
@@ -222,17 +320,10 @@ public class ChartService {
     }
 
     // ═════════════════════════════════════════════
-    // 5. SWIMMER PLOT — Python primary, Java2D fallback
+    // 5. SWIMMER PLOT (Java2D — Python coming soon)
     // ═════════════════════════════════════════════
     @SuppressWarnings("unchecked")
     public byte[] generateSwimmerPlot(Map<String, Object> data) throws Exception {
-        // Python endpoint not yet ready — use Java2D directly
-        // TODO: delegate to pythonCharts.fetchSwimmerPlot(data) when ready
-        return generateSwimmerPlotJava2D(data);
-    }
-
-    @SuppressWarnings("unchecked")
-    private byte[] generateSwimmerPlotJava2D(Map<String, Object> data) throws Exception {
         List<Map<String, Object>> pts = (List<Map<String, Object>>) data.get("patients");
         String xlabel = s(data, "xlabel", "Time (months)");
         pts.sort(Comparator.comparingDouble(p -> -n(p, "duration", 0)));
@@ -283,13 +374,6 @@ public class ChartService {
     private int fPx(double hr, int sX, int pW, double hrMin, double hrMax) { double lMin = Math.log(hrMin), lMax = Math.log(hrMax); return sX + (int)(((Math.log(Math.max(hrMin, Math.min(hrMax, hr))) - lMin) / (lMax - lMin)) * pW); }
     private void cStr(Graphics2D g, String t, int x, int y) { FontMetrics fm = g.getFontMetrics(); g.drawString(t, x - fm.stringWidth(t) / 2, y); }
     private void rStr(Graphics2D g, String t, int x, int y) { FontMetrics fm = g.getFontMetrics(); g.drawString(t, x - fm.stringWidth(t), y); }
-    private void rCStr(Graphics2D g, String t, int x, int y) {
-        Graphics2D g2 = (Graphics2D) g.create();
-        g2.rotate(-Math.PI / 2, x, y);
-        FontMetrics fm = g2.getFontMetrics();
-        g2.drawString(t, x - fm.stringWidth(t) / 2, y);
-        g2.dispose();
-    }
     private Color armClr(Map<String, Object> a, int i) { Object c = a.get("color"); if (c instanceof String) { String h = ((String) c).replace("#", ""); if (h.length() == 6) return ThemeConfig.hex(h); } return ARM_COLORS[i % ARM_COLORS.length]; }
     private Color barClr(Map<String, Object> b, int i) { return armClr(b, i); }
     private Color rspClr(String r) { return switch (r.toUpperCase()) { case "CR" -> new Color(52, 168, 83); case "PR" -> new Color(66, 133, 244); case "SD" -> new Color(255, 167, 38); case "PD" -> new Color(234, 67, 53); default -> AXIS_CLR; }; }
