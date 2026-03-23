@@ -2,6 +2,7 @@ package com.medai.renderer.template;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.medai.renderer.service.PythonChartClient;
+import org.apache.poi.openxml4j.util.ZipSecureFile;
 import org.apache.poi.xslf.usermodel.*;
 import org.apache.poi.sl.usermodel.PictureData;
 import org.slf4j.Logger;
@@ -73,6 +74,8 @@ public class TemplateRenderService {
         Map<String, Integer> layoutMap = getLayoutMap();
 
         // 1. Copy template to temp file (we modify the copy)
+        // Increase zip entry limit — template has 216 slides = 1500+ internal XML files
+        ZipSecureFile.setMaxFileCount(5000);
         Path tempFile = Files.createTempFile("medai_deck_", ".pptx");
         try {
             copyTemplate(tempFile);
