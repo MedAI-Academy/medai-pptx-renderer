@@ -226,12 +226,14 @@ public class TemplateRenderService {
 
             // Copy background if explicitly set on the slide
             if (srcCsld.getBg() != null) {
-                dstXml.getCSld().setBg(srcCsld.getBg().copy());
+                var bgCopy = srcCsld.getBg().copy();
+                dstXml.getCSld().getBg().set(bgCopy);
             }
 
             // Copy slide-level color map override if present
             if (src.getXmlObject().getClrMapOvr() != null) {
-                dstXml.setClrMapOvr(src.getXmlObject().getClrMapOvr().copy());
+                var clrCopy = src.getXmlObject().getClrMapOvr().copy();
+                dstXml.addNewClrMapOvr().set(clrCopy);
             }
 
         } catch (Exception e) {
