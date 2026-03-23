@@ -126,29 +126,46 @@ public class TemplateRenderService {
                     }
                 }
 
-                // 3. Create NEW empty output presentation
-                //    Copy slide dimensions from source
-                XMLSlideShow output = new XMLSlideShow();
-                output.setPageSize(source.getPageSize());
+                // 3. CLONE STRATEGY (POI 5.3.0 compatible):
+                //    Instead of creating a new empty deck (which loses masters/layouts),
+                //    we work on the template copy itself:
+                //    a) First, DUPLICATE the slides we need (appending clones at the end)
+                //    b) Then remove ALL original 216 template slides
+                //    c) Result: only our recipe slides remain, in order
+                //
+                //    This preserves slide masters, layouts, backgrounds, and all formatting
+                //    because cloned slides inherit from the same masters.
 
-                // 4. Clone each recipe slide from source → output
-                //    EACH clone is independent, so duplicates work naturally
+                int originalCount = sourceSlides.size(); // 216
+                log.info("Cloning {} recipe slides from {} template slides",
+                        recipe.size(), originalCount);
+
+                // 4a. Append clones for each recipe entry
+                //     After this loop: slides [0..215] = original, [216..216+N-1] = our clones
                 for (int i = 0; i < recipe.size(); i++) {
                     int srcIdx = sourceIndices.get(i);
                     XSLFSlide srcSlide = sourceSlides.get(srcIdx);
 
-                    // Import slide from source into output
-                    // This deep-copies all shapes, backgrounds, layouts, masters
-                    XSLFSlide cloned = output.createSlide();
-                    cloneSlideContent(srcSlide, cloned, source, output);
+                    // Clone by importing the slide's XML — works in POI 5.3.0
+                    XSLFSlide cloned = source.createSlide(srcSlide.getSlideLayout());
+                    cloneSlideViaXml(srcSlide, cloned);
 
-                    log.debug("Cloned template slide {} → output slide {} (layout: {})",
-                            srcIdx + 1, i + 1, recipe.get(i).get("layout"));
+                    log.debug("Cloned template slide {} → position {} (layout: {})",
+                            srcIdx + 1, originalCount + i + 1, recipe.get(i).get("layout"));
+                }
+
+                // 4b. Remove ALL original template slides (indices 0 to originalCount-1)
+                //     Remove from end to start so indices don't shift
+                for (int i = originalCount - 1; i >= 0; i--) {
+                    source.removeSlide(i);
                 }
 
                 // 5. Replace placeholders and handle chart images
-                //    Now we ONLY work with output indices (0 to recipe.size()-1)
-                List<XSLFSlide> outputSlides = output.getSlides();
+                //    Now we ONLY work with the remaining slides (our clones)
+                List<XSLFSlide> outputSlides = source.getSlides();
+                log.info("After cleanup: {} slides remain (expected {})",
+                        outputSlides.size(), recipe.size());
+
                 for (int i = 0; i < outputSlides.size(); i++) {
                     XSLFSlide slide = outputSlides.get(i);
                     Map<String, Object> slideSpec = recipe.get(i);
@@ -167,15 +184,14 @@ public class TemplateRenderService {
                                 (Map<String, Object>) slideSpec.get("chartData");
                         String chartType = (String) slideSpec.getOrDefault("chartType", "kaplan-meier");
                         if (chartData != null) {
-                            embedChart(output, slide, chartType, chartData);
+                            embedChart(source, slide, chartType, chartData);
                         }
                     }
                 }
 
                 // 6. Write output
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                output.write(baos);
-                output.close();
+                source.write(baos);
 
                 log.info("Deck rendered: {} slides, {} KB",
                         outputSlides.size(), baos.size() / 1024);
@@ -187,53 +203,57 @@ public class TemplateRenderService {
     }
 
     /**
-     * Deep-clone all content from a source slide to a target slide.
+     * Clone slide content via XML node copy (POI 5.3.0 compatible).
      *
-     * Uses XSLFSlide.importContent() which copies all shapes, text,
-     * images, background, and formatting. This is the Apache POI
-     * equivalent of "duplicate slide" in PowerPoint.
+     * Copies all shapes, text, images, fills, and formatting from src to dst
+     * by replacing the dst slide's XML content with a copy of src's XML.
+     * Since both slides live in the same presentation, all references
+     * (images, masters, layouts) resolve correctly.
      */
-    private void cloneSlideContent(XSLFSlide src, XSLFSlide dst,
-                                    XMLSlideShow srcPptx, XMLSlideShow dstPptx) {
+    private void cloneSlideViaXml(XSLFSlide src, XSLFSlide dst) {
         try {
-            // importContent copies shapes, text runs, images, fills, etc.
-            dst.importContent(src);
-        } catch (Exception e) {
-            log.warn("importContent failed for slide, falling back to shape-by-shape copy: {}",
-                    e.getMessage());
-            // Fallback: copy shapes individually
-            copyShapesManually(src, dst, srcPptx, dstPptx);
-        }
+            // Copy the common slide data (cSld) which contains all shapes
+            var srcCsld = src.getXmlObject().getCSld();
+            var dstXml = dst.getXmlObject();
 
-        // Copy background if set on the slide directly
-        try {
-            if (src.getBackground() != null) {
-                // Background is typically inherited from layout/master
-                // importContent should handle it, but we verify
-                copyBackground(src, dst);
+            // Replace the shape tree (spTree) — this is where all content lives
+            if (srcCsld.getSpTree() != null) {
+                dstXml.getCSld().setSpTree(
+                        (org.openxmlformats.schemas.presentationml.x2006.main.CTGroupShape)
+                                srcCsld.getSpTree().copy()
+                );
             }
+
+            // Copy background if explicitly set on the slide
+            if (srcCsld.getBg() != null) {
+                dstXml.getCSld().setBg(srcCsld.getBg().copy());
+            }
+
+            // Copy slide-level color map override if present
+            if (src.getXmlObject().getClrMapOvr() != null) {
+                dstXml.setClrMapOvr(src.getXmlObject().getClrMapOvr().copy());
+            }
+
         } catch (Exception e) {
-            log.debug("Background copy skipped: {}", e.getMessage());
+            log.warn("XML clone failed, falling back to shape-by-shape: {}", e.getMessage());
+            // Fallback: copy text shapes manually (at least placeholders will work)
+            copyShapesManually(src, dst);
         }
     }
 
     /**
-     * Fallback shape-by-shape copy if importContent fails.
+     * Fallback shape copy — copies text content for placeholder replacement.
      */
-    private void copyShapesManually(XSLFSlide src, XSLFSlide dst,
-                                     XMLSlideShow srcPptx, XMLSlideShow dstPptx) {
+    private void copyShapesManually(XSLFSlide src, XSLFSlide dst) {
         for (XSLFShape shape : src.getShapes()) {
             try {
                 if (shape instanceof XSLFTextShape textShape) {
-                    // Create a matching text box
                     XSLFTextBox copy = dst.createTextBox();
                     copy.setAnchor(textShape.getAnchor());
-
-                    // Copy text content preserving runs
                     copy.clearText();
                     for (XSLFTextParagraph srcPara : textShape.getTextParagraphs()) {
                         XSLFTextParagraph dstPara = copy.addNewTextParagraph();
-                        dstPara.setTextAlign(srcPara.getTextAlign());
+                        try { dstPara.setTextAlign(srcPara.getTextAlign()); } catch (Exception ignored) {}
                         for (XSLFTextRun srcRun : srcPara.getTextRuns()) {
                             XSLFTextRun dstRun = dstPara.addNewTextRun();
                             dstRun.setText(srcRun.getRawText());
@@ -243,56 +263,13 @@ public class TemplateRenderService {
                                 dstRun.setItalic(srcRun.isItalic());
                                 dstRun.setFontColor(srcRun.getFontColor());
                                 dstRun.setFontFamily(srcRun.getFontFamily());
-                            } catch (Exception ignored) {
-                                // Some properties may not be set
-                            }
+                            } catch (Exception ignored) {}
                         }
                     }
-
-                } else if (shape instanceof XSLFPictureShape picShape) {
-                    // Re-add picture data and create picture
-                    XSLFPictureData srcPicData = picShape.getPictureData();
-                    if (srcPicData != null) {
-                        XSLFPictureData dstPicData = dstPptx.addPicture(
-                                srcPicData.getData(), srcPicData.getType());
-                        XSLFPictureShape copy = dst.createPicture(dstPicData);
-                        copy.setAnchor(picShape.getAnchor());
-                    }
-
-                } else if (shape instanceof XSLFAutoShape autoShape) {
-                    // Auto shapes (rectangles, etc.)
-                    XSLFAutoShape copy = dst.createAutoShape();
-                    copy.setAnchor(autoShape.getAnchor());
-                    copy.setShapeType(autoShape.getShapeType());
-                    // Copy text if any
-                    if (autoShape.getText() != null && !autoShape.getText().isEmpty()) {
-                        copy.setText(autoShape.getText());
-                    }
                 }
-                // Note: XSLFGroupShape, XSLFTable, XSLFConnectorShape 
-                // are handled by importContent in the primary path
             } catch (Exception e) {
-                log.debug("Shape copy skipped ({}): {}", shape.getClass().getSimpleName(), e.getMessage());
+                log.debug("Shape copy skipped: {}", e.getMessage());
             }
-        }
-    }
-
-    /**
-     * Copy slide background.
-     */
-    private void copyBackground(XSLFSlide src, XSLFSlide dst) {
-        try {
-            // Use OOXML direct access for background
-            var srcBg = src.getXmlObject().getCSld().getBg();
-            if (srcBg != null) {
-                var dstCsld = dst.getXmlObject().getCSld();
-                if (dstCsld.getBg() == null) {
-                    dstCsld.addNewBg();
-                }
-                dstCsld.getBg().set(srcBg.copy());
-            }
-        } catch (Exception e) {
-            log.debug("OOXML background copy failed: {}", e.getMessage());
         }
     }
 
