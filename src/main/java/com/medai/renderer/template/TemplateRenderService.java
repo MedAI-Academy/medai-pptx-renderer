@@ -172,8 +172,8 @@ public class TemplateRenderService {
                     String layoutId = (String) slideSpec.get("layout");
 
                     // Replace {{placeholders}}
-                    Map<String, String> placeholders =
-                            (Map<String, String>) slideSpec.get("placeholders");
+                    Map<String, ?> placeholders =
+                            (Map<String, ?>) slideSpec.get("placeholders");
                     if (placeholders != null) {
                         replacePlaceholders(slide, placeholders);
                     }
@@ -314,7 +314,7 @@ public class TemplateRenderService {
      * Replace {{placeholder}} in any text shape (textbox, autoshape, table cell).
      * Preserves original formatting of each run.
      */
-    private void replaceInTextShape(XSLFTextShape textShape, Map<String, String> placeholders) {
+    private void replaceInTextShape(XSLFTextShape textShape, Map<String, ?> placeholders) {     for (XSLFTextParagraph para : textShape.getTextParagraphs()) {         for (XSLFTextRun run : para.getTextRuns()) {             String text = run.getRawText();             if (text != null && text.contains("{{")) {                 for (Map.Entry<String, ?> entry : placeholders.entrySet()) {                     String key = "{{" + entry.getKey() + "}}";                     String value = entry.getValue() != null ? String.valueOf(entry.getValue()) : "";                     if (text.contains(key)) {                         text = text.replace(key, value);                     }                 }                 run.setText(text);             }         }     } }
         for (XSLFTextParagraph para : textShape.getTextParagraphs()) {
             for (XSLFTextRun run : para.getTextRuns()) {
                 String text = run.getRawText();
