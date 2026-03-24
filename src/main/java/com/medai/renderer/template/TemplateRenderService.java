@@ -280,10 +280,10 @@ public class TemplateRenderService {
             boolean first = true;
             for (XSLFTextRun run : runs) {
                 if (first) {
-                    run.setText(fullText);
+                    try { run.setText(fullText); } catch (Exception ignored) {}
                     first = false;
                 } else {
-                    run.setText("");
+                    try { run.setText(""); } catch (Exception ignored) {}
                 }
             }
         }
