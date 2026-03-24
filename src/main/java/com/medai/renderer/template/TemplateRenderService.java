@@ -18,25 +18,11 @@ import java.nio.file.*;
 import java.util.*;
 
 /**
- * Template-based PPTX renderer — CLONE strategy.
+ * Template-based PPTX renderer — CLONE strategy (POI 5.3.0 compatible).
  *
- * Flow:
- * 1. Receives a "deck recipe" — ordered list of (layoutId, placeholders)
- * 2. Opens the master template READ-ONLY as source
- * 3. Creates a NEW empty PPTX as output
- * 4. For each recipe entry: imports (clones) the source slide into the output
- *    → Duplicates are naturally handled (each clone is independent)
- * 5. Replaces all {{placeholder}} strings with actual content
- * 6. For CHART_IMAGE slides, fetches PNG from Python Chart Service and embeds it
- * 7. Returns the final PPTX bytes
- *
- * KEY FIX: The old "keep & reorder" strategy used a Set<Integer> for slide indices,
- * which collapsed duplicates. If a recipe used SECTION_DIVIDER 3 times (all pointing
- * to template slide 5), the Set only kept one copy, then the reorder logic tried to
- * access indices beyond the deck size → IndexOutOfBoundsException.
- *
- * The new CLONE strategy creates a fresh deck and imports each slide individually,
- * so using the same layout 10 times creates 10 independent slide copies.
+ * KEY FIX: The old "keep & reorder" strategy used a Set which collapsed
+ * duplicate layouts (e.g. 3x SECTION_DIVIDER all pointing to same template slide).
+ * New strategy: clone each recipe slide individually, then delete all originals.
  */
 @Service
 public class TemplateRenderService {
@@ -50,12 +36,8 @@ public class TemplateRenderService {
     @Value("${TEMPLATE_PATH:classpath:MedAI_Template_v2_final.pptx}")
     private String templatePath;
 
-    // Manifest: layout_id → slide_number (1-indexed)
     private Map<String, Integer> layoutSlideMap;
 
-    /**
-     * Load manifest on first use (thread-safe lazy init).
-     */
     private synchronized Map<String, Integer> getLayoutMap() throws Exception {
         if (layoutSlideMap != null) return layoutSlideMap;
 
@@ -74,21 +56,13 @@ public class TemplateRenderService {
         return layoutSlideMap;
     }
 
-    /**
-     * Render a complete deck from a recipe.
-     *
-     * @param recipe Ordered list of slide specs: [{layout, placeholders, chartData?}, ...]
-     * @return PPTX file as byte array
-     */
     @SuppressWarnings("unchecked")
     public byte[] renderDeck(List<Map<String, Object>> recipe) throws Exception {
         Map<String, Integer> layoutMap = getLayoutMap();
 
-        // Increase zip entry limit — template has 216 slides = 1500+ internal XML files
         ZipSecureFile.setMaxFileCount(5000);
 
-        // 1. Resolve all layout IDs to 0-indexed template slide numbers FIRST
-        //    (fail fast if any layout is unknown)
+        // 1. Resolve layout IDs to 0-indexed template slide numbers
         List<Integer> sourceIndices = new ArrayList<>();
         for (Map<String, Object> slideSpec : recipe) {
             String layoutId = (String) slideSpec.get("layout");
@@ -97,14 +71,14 @@ public class TemplateRenderService {
                 throw new IllegalArgumentException("Unknown layout: " + layoutId
                         + ". Available: " + layoutMap.keySet());
             }
-            sourceIndices.add(slideNum - 1); // Convert to 0-indexed
+            sourceIndices.add(slideNum - 1);
         }
 
         log.info("Deck recipe: {} slides, layouts: {}",
                 recipe.size(),
                 recipe.stream().map(s -> (String) s.get("layout")).toList());
 
-        // 2. Open template as READ-ONLY source
+        // 2. Open template copy
         Path tempSource = Files.createTempFile("medai_src_", ".pptx");
         try {
             copyTemplate(tempSource);
@@ -115,7 +89,7 @@ public class TemplateRenderService {
                 int sourceTotal = sourceSlides.size();
                 log.info("Template loaded: {} source slides", sourceTotal);
 
-                // Validate all indices are in range
+                // Validate indices
                 for (int i = 0; i < sourceIndices.size(); i++) {
                     int idx = sourceIndices.get(i);
                     if (idx < 0 || idx >= sourceTotal) {
@@ -126,42 +100,33 @@ public class TemplateRenderService {
                     }
                 }
 
-                // 3. CLONE STRATEGY (POI 5.3.0 compatible):
-                //    Instead of creating a new empty deck (which loses masters/layouts),
-                //    we work on the template copy itself:
-                //    a) First, DUPLICATE the slides we need (appending clones at the end)
-                //    b) Then remove ALL original 216 template slides
-                //    c) Result: only our recipe slides remain, in order
-                //
-                //    This preserves slide masters, layouts, backgrounds, and all formatting
-                //    because cloned slides inherit from the same masters.
+                // 3. CLONE STRATEGY:
+                //    a) Append clones at end of deck
+                //    b) Remove all original template slides
+                //    c) Only our clones remain
 
-                int originalCount = sourceSlides.size(); // 216
+                int originalCount = sourceSlides.size();
                 log.info("Cloning {} recipe slides from {} template slides",
                         recipe.size(), originalCount);
 
-                // 4a. Append clones for each recipe entry
-                //     After this loop: slides [0..215] = original, [216..216+N-1] = our clones
+                // 3a. Append clones
                 for (int i = 0; i < recipe.size(); i++) {
                     int srcIdx = sourceIndices.get(i);
                     XSLFSlide srcSlide = sourceSlides.get(srcIdx);
 
-                    // Clone by importing the slide's XML — works in POI 5.3.0
                     XSLFSlide cloned = source.createSlide(srcSlide.getSlideLayout());
                     cloneSlideViaXml(srcSlide, cloned);
 
-                    log.debug("Cloned template slide {} → position {} (layout: {})",
+                    log.debug("Cloned template slide {} -> position {} (layout: {})",
                             srcIdx + 1, originalCount + i + 1, recipe.get(i).get("layout"));
                 }
 
-                // 4b. Remove ALL original template slides (indices 0 to originalCount-1)
-                //     Remove from end to start so indices don't shift
+                // 3b. Remove ALL original template slides
                 for (int i = originalCount - 1; i >= 0; i--) {
                     source.removeSlide(i);
                 }
 
-                // 5. Replace placeholders and handle chart images
-                //    Now we ONLY work with the remaining slides (our clones)
+                // 4. Replace placeholders and embed charts
                 List<XSLFSlide> outputSlides = source.getSlides();
                 log.info("After cleanup: {} slides remain (expected {})",
                         outputSlides.size(), recipe.size());
@@ -171,14 +136,13 @@ public class TemplateRenderService {
                     Map<String, Object> slideSpec = recipe.get(i);
                     String layoutId = (String) slideSpec.get("layout");
 
-                    // Replace {{placeholders}}
-                    Map<String, ?> placeholders =
-                            (Map<String, ?>) slideSpec.get("placeholders");
+                    // Replace {{placeholders}} — use Map<String, ?> to handle Integer values
+                    Map<String, ?> placeholders = (Map<String, ?>) slideSpec.get("placeholders");
                     if (placeholders != null) {
                         replacePlaceholders(slide, placeholders);
                     }
 
-                    // Handle CHART_IMAGE slides — fetch PNG and embed
+                    // Handle CHART_IMAGE slides
                     if ("CHART_IMAGE".equals(layoutId)) {
                         Map<String, Object> chartData =
                                 (Map<String, Object>) slideSpec.get("chartData");
@@ -189,7 +153,7 @@ public class TemplateRenderService {
                     }
                 }
 
-                // 6. Write output
+                // 5. Write output
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 source.write(baos);
 
@@ -202,50 +166,24 @@ public class TemplateRenderService {
         }
     }
 
-    /**
-     * Clone slide content via XML node copy (POI 5.3.0 compatible).
-     *
-     * Copies all shapes, text, images, fills, and formatting from src to dst
-     * by replacing the dst slide's XML content with a copy of src's XML.
-     * Since both slides live in the same presentation, all references
-     * (images, masters, layouts) resolve correctly.
-     */
+    // ═══════════════════════════════════════════════════════════
+    // CLONE HELPERS
+    // ═══════════════════════════════════════════════════════════
+
     private void cloneSlideViaXml(XSLFSlide src, XSLFSlide dst) {
         try {
-            // Copy the common slide data (cSld) which contains all shapes
             var srcCsld = src.getXmlObject().getCSld();
             var dstXml = dst.getXmlObject();
 
-            // Replace the shape tree (spTree) — this is where all content lives
             if (srcCsld.getSpTree() != null) {
-                dstXml.getCSld().setSpTree(
-                        (org.openxmlformats.schemas.presentationml.x2006.main.CTGroupShape)
-                                srcCsld.getSpTree().copy()
-                );
+                dstXml.getCSld().getSpTree().set(srcCsld.getSpTree().copy());
             }
-
-            // Copy background if explicitly set on the slide
-            if (srcCsld.getBg() != null) {
-                var bgCopy = srcCsld.getBg().copy();
-                dstXml.getCSld().getBg().set(bgCopy);
-            }
-
-            // Copy slide-level color map override if present
-            if (src.getXmlObject().getClrMapOvr() != null) {
-                var clrCopy = src.getXmlObject().getClrMapOvr().copy();
-                dstXml.addNewClrMapOvr().set(clrCopy);
-            }
-
         } catch (Exception e) {
             log.warn("XML clone failed, falling back to shape-by-shape: {}", e.getMessage());
-            // Fallback: copy text shapes manually (at least placeholders will work)
             copyShapesManually(src, dst);
         }
     }
 
-    /**
-     * Fallback shape copy — copies text content for placeholder replacement.
-     */
     private void copyShapesManually(XSLFSlide src, XSLFSlide dst) {
         for (XSLFShape shape : src.getShapes()) {
             try {
@@ -255,7 +193,10 @@ public class TemplateRenderService {
                     copy.clearText();
                     for (XSLFTextParagraph srcPara : textShape.getTextParagraphs()) {
                         XSLFTextParagraph dstPara = copy.addNewTextParagraph();
-                        try { dstPara.setTextAlign(srcPara.getTextAlign()); } catch (Exception ignored) {}
+                        try {
+                            dstPara.setTextAlign(srcPara.getTextAlign());
+                        } catch (Exception ignored) {
+                        }
                         for (XSLFTextRun srcRun : srcPara.getTextRuns()) {
                             XSLFTextRun dstRun = dstPara.addNewTextRun();
                             dstRun.setText(srcRun.getRawText());
@@ -265,7 +206,8 @@ public class TemplateRenderService {
                                 dstRun.setItalic(srcRun.isItalic());
                                 dstRun.setFontColor(srcRun.getFontColor());
                                 dstRun.setFontFamily(srcRun.getFontFamily());
-                            } catch (Exception ignored) {}
+                            } catch (Exception ignored) {
+                            }
                         }
                     }
                 }
@@ -275,20 +217,17 @@ public class TemplateRenderService {
         }
     }
 
-    /**
-     * Replace all {{placeholder}} strings in a slide's text shapes.
-     * Handles: direct shapes, grouped shapes, table cells.
-     */
-    private void replacePlaceholders(XSLFSlide slide, Map<String, String> placeholders) {
+    // ═══════════════════════════════════════════════════════════
+    // PLACEHOLDER REPLACEMENT
+    // ═══════════════════════════════════════════════════════════
+
+    private void replacePlaceholders(XSLFSlide slide, Map<String, ?> placeholders) {
         for (XSLFShape shape : slide.getShapes()) {
             replaceInShape(shape, placeholders);
         }
     }
 
-    /**
-     * Recursively replace placeholders in any shape type.
-     */
-    private void replaceInShape(XSLFShape shape, Map<String, String> placeholders) {
+    private void replaceInShape(XSLFShape shape, Map<String, ?> placeholders) {
         if (shape instanceof XSLFTextShape textShape) {
             replaceInTextShape(textShape, placeholders);
 
@@ -298,7 +237,6 @@ public class TemplateRenderService {
             }
 
         } else if (shape instanceof XSLFTable table) {
-            // Handle table cells
             for (int row = 0; row < table.getNumberOfRows(); row++) {
                 for (int col = 0; col < table.getNumberOfColumns(); col++) {
                     XSLFTableCell cell = table.getCell(row, col);
@@ -310,18 +248,14 @@ public class TemplateRenderService {
         }
     }
 
-    /**
-     * Replace {{placeholder}} in any text shape (textbox, autoshape, table cell).
-     * Preserves original formatting of each run.
-     */
-    private void replaceInTextShape(XSLFTextShape textShape, Map<String, ?> placeholders) {     for (XSLFTextParagraph para : textShape.getTextParagraphs()) {         for (XSLFTextRun run : para.getTextRuns()) {             String text = run.getRawText();             if (text != null && text.contains("{{")) {                 for (Map.Entry<String, ?> entry : placeholders.entrySet()) {                     String key = "{{" + entry.getKey() + "}}";                     String value = entry.getValue() != null ? String.valueOf(entry.getValue()) : "";                     if (text.contains(key)) {                         text = text.replace(key, value);                     }                 }                 run.setText(text);             }         }     } }
+    private void replaceInTextShape(XSLFTextShape textShape, Map<String, ?> placeholders) {
         for (XSLFTextParagraph para : textShape.getTextParagraphs()) {
             for (XSLFTextRun run : para.getTextRuns()) {
                 String text = run.getRawText();
                 if (text != null && text.contains("{{")) {
-                    for (Map.Entry<String, String> entry : placeholders.entrySet()) {
+                    for (Map.Entry<String, ?> entry : placeholders.entrySet()) {
                         String key = "{{" + entry.getKey() + "}}";
-                        String value = entry.getValue() != null ? entry.getValue() : "";
+                        String value = entry.getValue() != null ? String.valueOf(entry.getValue()) : "";
                         if (text.contains(key)) {
                             text = text.replace(key, value);
                         }
@@ -332,13 +266,12 @@ public class TemplateRenderService {
         }
     }
 
-    /**
-     * Fetch chart PNG from Python service and embed into the CHART_IMAGE slide.
-     * Replaces the placeholder shape with the actual chart image.
-     */
+    // ═══════════════════════════════════════════════════════════
+    // CHART EMBEDDING
+    // ═══════════════════════════════════════════════════════════
+
     private void embedChart(XMLSlideShow pptx, XSLFSlide slide,
                             String chartType, Map<String, Object> chartData) throws Exception {
-        // Fetch PNG from Python Chart Service
         byte[] pngBytes;
         try {
             if ("kaplan-meier".equals(chartType)) {
@@ -349,12 +282,11 @@ public class TemplateRenderService {
             }
         } catch (Exception e) {
             log.error("Failed to fetch chart from Python service: {}", e.getMessage());
-            return; // Don't crash — just leave placeholder
+            return;
         }
 
         log.info("Received {} KB chart PNG for type '{}'", pngBytes.length / 1024, chartType);
 
-        // Find the placeholder shape: by name or by {{chart_image}} text
         XSLFShape placeholderShape = null;
         for (XSLFShape shape : slide.getShapes()) {
             String name = shape.getShapeName();
@@ -371,18 +303,15 @@ public class TemplateRenderService {
             }
         }
 
-        // Get position (from placeholder or default)
         Rectangle2D anchor;
         if (placeholderShape != null) {
             anchor = placeholderShape.getAnchor();
             slide.removeShape(placeholderShape);
         } else {
             log.warn("No chart placeholder found, using default position");
-            // Default: centered content area (in points)
             anchor = new Rectangle2D.Double(48, 108, 864, 360);
         }
 
-        // Add chart image at the placeholder's position
         XSLFPictureData picData = pptx.addPicture(pngBytes, PictureData.PictureType.PNG);
         XSLFPictureShape pic = slide.createPicture(picData);
         pic.setAnchor(anchor);
@@ -392,9 +321,10 @@ public class TemplateRenderService {
                 (int) anchor.getWidth(), (int) anchor.getHeight());
     }
 
-    /**
-     * Copy the master template to a temp file.
-     */
+    // ═══════════════════════════════════════════════════════════
+    // TEMPLATE FILE COPY
+    // ═══════════════════════════════════════════════════════════
+
     private void copyTemplate(Path target) throws Exception {
         InputStream is;
         if (templatePath.startsWith("classpath:")) {
