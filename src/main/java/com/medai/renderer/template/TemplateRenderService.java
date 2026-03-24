@@ -250,17 +250,40 @@ public class TemplateRenderService {
 
     private void replaceInTextShape(XSLFTextShape textShape, Map<String, ?> placeholders) {
         for (XSLFTextParagraph para : textShape.getTextParagraphs()) {
-            for (XSLFTextRun run : para.getTextRuns()) {
-                String text = run.getRawText();
-                if (text != null && text.contains("{{")) {
-                    for (Map.Entry<String, ?> entry : placeholders.entrySet()) {
-                        String key = "{{" + entry.getKey() + "}}";
-                        String value = entry.getValue() != null ? String.valueOf(entry.getValue()) : "";
-                        if (text.contains(key)) {
-                            text = text.replace(key, value);
-                        }
-                    }
-                    run.setText(text);
+            List<XSLFTextRun> runs = para.getTextRuns();
+            if (runs.isEmpty()) continue;
+
+            // 1. Concatenate ALL runs to get the full paragraph text
+            StringBuilder sb = new StringBuilder();
+            for (XSLFTextRun run : runs) {
+                String t = run.getRawText();
+                if (t != null) sb.append(t);
+            }
+            String fullText = sb.toString();
+
+            // 2. Skip if no placeholders in this paragraph
+            if (!fullText.contains("{{")) continue;
+
+            // 3. Replace all known placeholders
+            for (Map.Entry<String, ?> entry : placeholders.entrySet()) {
+                String key = "{{" + entry.getKey() + "}}";
+                String value = entry.getValue() != null ? String.valueOf(entry.getValue()) : "";
+                fullText = fullText.replace(key, value);
+            }
+
+            // 4. Clean up any remaining unreplaced {{...}} placeholders
+            //    (e.g. step_5 when only 4 steps exist)
+            fullText = fullText.replaceAll("\\{\\{[^}]*\\}\\}", "");
+
+            // 5. Put the result in the FIRST run, clear all others
+            //    This preserves the formatting of the first run
+            boolean first = true;
+            for (XSLFTextRun run : runs) {
+                if (first) {
+                    run.setText(fullText);
+                    first = false;
+                } else {
+                    run.setText("");
                 }
             }
         }
