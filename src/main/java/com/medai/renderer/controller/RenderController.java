@@ -2,6 +2,7 @@ package com.medai.renderer.controller;
 
 import com.medai.renderer.model.RenderRequest;
 import com.medai.renderer.service.PptxRenderService;
+import com.medai.renderer.layouts.CongressSummaryLayout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -91,6 +92,50 @@ public class RenderController {
     public ResponseEntity<byte[]> legacyRender(@RequestBody RenderRequest request) {
         log.info("Legacy /render endpoint called — forwarding to /api/v1/render");
         return render(request);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // CONGRESS SUMMARY ENDPOINT
+    // Accepts flat JSON from congress-harvest.html:
+    // { "layoutType": "CONGRESS_SUMMARY", "meta": {...},
+    //   "summary": "...", "sources": [...] }
+    // ═══════════════════════════════════════════════════════════
+
+    @PostMapping("/render/congress-summary")
+    public ResponseEntity<byte[]> renderCongressSummary(
+            @RequestBody Map<String, Object> payload) {
+
+        long start = System.currentTimeMillis();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> meta = (Map<String, Object>) payload.getOrDefault("meta", Map.of());
+        String congressName = meta.getOrDefault("congressName", "Congress").toString();
+        log.info("Congress summary render: congress={}", congressName);
+
+        try {
+            byte[] pptxBytes = CongressSummaryLayout.render(payload);
+
+            String safeName = congressName.replaceAll("[^a-zA-Z0-9]", "-").toLowerCase();
+            String filename  = safeName + "-summary.pptx";
+
+            long elapsed = System.currentTimeMillis() - start;
+            log.info("Congress summary render complete: {}KB, {}ms",
+                pptxBytes.length / 1024, elapsed);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.parseMediaType(PPTX_CONTENT_TYPE));
+            headers.setContentDispositionFormData("attachment", filename);
+            headers.setContentLength(pptxBytes.length);
+            headers.add("Access-Control-Expose-Headers", "Content-Disposition");
+            headers.add("Access-Control-Allow-Origin", "*");
+
+            return new ResponseEntity<>(pptxBytes, headers, HttpStatus.OK);
+
+        } catch (Exception e) {
+            log.error("Congress summary render failed", e);
+            String errorJson = "{\"error\": \"" + e.getMessage().replace("\"", "'") + "\"}";
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(errorJson.getBytes());
+        }
     }
 
     // ═══════════════════════════════════════════════════════════
