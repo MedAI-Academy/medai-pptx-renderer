@@ -1,102 +1,199 @@
-# MedAI PPTX Renderer
+# medaccur Playwright PPTX Renderer
 
-**Java/Spring Boot service for generating professional PPTX presentations.**  
-Replaces the python-pptx renderer with Apache POI — fixing the namespace/background bugs permanently.
+FastAPI + Playwright + python-pptx service deployed on Railway.
+Converts medaccur HTML slide templates into professional PPTX files.
 
-## Tech Stack
+---
 
-| Component | Technology |
-|-----------|-----------|
-| Runtime | Java 17 (Eclipse Temurin) |
-| Framework | Spring Boot 3.3 |
-| PPTX Engine | Apache POI 5.4 (XSLF) |
-| Charts | JFreeChart 1.5 |
-| Build | Gradle 8.5 |
-| Deploy | Railway (Docker) |
+## Architecture
 
-## Quick Start (Local)
-
-```bash
-# 1. Clone
-git clone https://github.com/MedAI-Academy/medai-pptx-renderer.git
-cd medai-pptx-renderer
-
-# 2. Build
-./gradlew bootJar
-
-# 3. Run
-java -jar build/libs/medai-renderer.jar
-
-# 4. Test health
-curl http://localhost:8080/api/v1/health
+```
+Browser (MAP Generator)
+    │
+    │  POST /.netlify/functions/render-pptx
+    │
+Netlify Function (proxy)
+    │
+    │  POST https://medai-pptx-renderer.railway.app/render-pptx
+    │
+Railway Service (this repo)
+    │
+    ├── Playwright opens each slide URL on Netlify
+    ├── Injects data via window.setXxxData()
+    ├── Injects theme via window.setTheme()
+    ├── Screenshots 1920×1080 → PNG
+    └── python-pptx assembles PNGs → .pptx
 ```
 
-## Deploy to Railway
+---
 
-### Option A: From GitHub (Recommended)
+## Deployment on Railway
 
-1. Push this repo to `MedAI-Academy/medai-pptx-renderer`
-2. In Railway Dashboard → New Service → Deploy from GitHub
-3. Select the repo → Railway auto-detects Dockerfile
-4. Add env var: `PORT=8080`
-5. Generate domain → use the same URL as the old Python renderer
-
-### Option B: Railway CLI
+### 1. Create new Railway service
 
 ```bash
+# Option A: deploy from GitHub
+# Push this folder to a GitHub repo
+# Railway: New Project → Deploy from GitHub → select repo
+
+# Option B: Railway CLI
 railway login
 railway init
 railway up
 ```
 
-## API
+### 2. Set environment variables in Railway
 
-### POST /api/v1/render
-Accepts JSON, returns PPTX binary.
+No secrets needed — the renderer is public.
+Railway auto-sets `PORT`.
 
-```bash
-curl -X POST http://localhost:8080/api/v1/render \
-  -H "Content-Type: application/json" \
-  -d @test-request.json \
-  -o output.pptx
+Optional:
+- `ALLOWED_ORIGINS` — comma-separated allowed CORS origins (default: *)
+
+### 3. Get the Railway URL
+
+After deploy, copy the Railway URL e.g.:
+```
+https://medai-pptx-renderer-production.up.railway.app
 ```
 
-### POST /render
-Legacy endpoint — backwards compatible with existing map_generator.html.
+### 4. Set Netlify env var
 
-### GET /api/v1/health
-Returns service status and capabilities.
+In Netlify dashboard → Site settings → Environment variables:
+```
+RAILWAY_RENDERER_URL = https://medai-pptx-renderer-production.up.railway.app
+```
 
-### GET /api/v1/templates
-Returns available themes and layouts.
+---
 
-## Slide Layouts
+## Netlify integration
 
-| Layout | Description |
+### Copy function file
+```
+netlify-function/render-pptx.js
+→ netlify/functions/render-pptx.js
+```
+
+### Copy export patch
+```
+netlify-function/map_generator_export_patch.js
+→ public/js/map_generator_export_patch.js
+```
+
+### Update map_generator.html
+
+1. Add script tag before `</body>`:
+```html
+<script src="/js/map_generator_export_patch.js"></script>
+```
+
+2. Find the PPTX export button and change onclick:
+```html
+<!-- OLD -->
+<button onclick="exportPptx()">Download PPTX</button>
+
+<!-- NEW -->
+<button onclick="exportViaRenderer()">Download PPTX</button>
+```
+
+3. Add a theme selector to Step 5 (optional):
+```html
+<select id="themeSelect">
+  <option value="light">Light</option>
+  <option value="dark">Dark</option>
+  <option value="teal">Teal</option>
+  <option value="slate">Slate</option>
+</select>
+```
+
+---
+
+## API Reference
+
+### POST /render-pptx
+
+```json
+{
+  "drug": "Belantamab Mafodotin",
+  "indication": "Relapsed/Refractory Multiple Myeloma",
+  "country": "Germany",
+  "year": "2027",
+  "theme": "light",
+  "base_url": "https://medai-dashboard.netlify.app",
+  "slides": [
+    {
+      "template": "slides/slide_swot.html",
+      "section_id": "swot",
+      "theme": "light",
+      "data": {
+        "strengths": ["Only ADC targeting BCMA", "..."],
+        "weaknesses": ["..."],
+        "opportunities": ["..."],
+        "threats": ["..."]
+      }
+    }
+  ]
+}
+```
+
+Returns: `application/vnd.openxmlformats-officedocument.presentationml.presentation` binary
+
+### GET /health
+
+```json
+{ "status": "ok", "service": "medaccur-renderer", "version": "1.0.0" }
+```
+
+### GET /slides
+
+Returns list of all 23 slide templates with inject function names.
+
+---
+
+## Local development
+
+```bash
+# Install deps
+pip install -r requirements.txt
+playwright install chromium
+
+# Run
+uvicorn main:app --reload --port 8080
+
+# Test
+curl -X POST http://localhost:8080/render-pptx \
+  -H "Content-Type: application/json" \
+  -d '{
+    "drug": "Belantamab Mafodotin",
+    "indication": "RRMM",
+    "country": "Germany",
+    "year": "2027",
+    "theme": "light",
+    "base_url": "https://medai-dashboard.netlify.app",
+    "slides": [
+      {
+        "template": "slides/slide_swot.html",
+        "section_id": "swot",
+        "data": {}
+      }
+    ]
+  }' --output test.pptx
+```
+
+---
+
+## Performance
+
+| Slides | Render time |
 |--------|-------------|
-| TITLE | Title slide with KPIs and badges |
-| TOC | Table of contents with numbered items |
-| DIVIDER | Section divider with large number |
-| CONTENT_FULL | Full-width body text |
-| CONTENT_TWO_COL | Two-column layout |
-| CONTENT_CARDS | 2×2 or 3×2 card grid |
-| TABLE | Data table (studies, guidelines) |
-| CHART_KM | Kaplan-Meier survival curve |
-| SWOT | 2×2 SWOT matrix |
-| TIMELINE | Horizontal timeline with milestones |
-| KPI_DASHBOARD | Big-number KPI boxes |
-| REFERENCES | Source list with tier indicators |
-| CONFIDENCE | Score breakdown + time/cost savings |
+| 5      | ~15s        |
+| 10     | ~30s        |
+| 23     | ~60–90s     |
 
-## Migration from Python Renderer
+Bottleneck: Playwright page load + network (Netlify → Railway → Netlify).
+Each slide loads fonts from Google Fonts and D3 from CDN.
 
-The existing `map_generator.html` sends POST to `/render`.  
-This Java service exposes the same `/render` endpoint.  
-**No frontend changes needed** — just swap the Railway service.
-
-### What's Fixed
-
-- **Background colors**: No more xmlns namespace bug → correct in PowerPoint
-- **Text overflow**: Auto-shrink enabled on all text boxes
-- **Charts**: JFreeChart renders Kaplan-Meier as high-res PNG
-- **Reliability**: No more empty slides from API timeouts (handled by frontend)
+**Optimisation options (future):**
+- Cache fonts locally in Railway container
+- Render slides in parallel (2–4 concurrent pages)
+- Serve slides from Railway directly (avoid Netlify round-trip)
