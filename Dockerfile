@@ -3,33 +3,30 @@
 
 FROM python:3.12-slim
 
-# System deps for Playwright Chromium
+# System deps for Playwright Chromium on Debian Trixie
 RUN apt-get update && apt-get install -y \
     wget curl gnupg ca-certificates \
-    # Chromium runtime deps
     libnss3 libatk1.0-0 libatk-bridge2.0-0 \
     libcups2 libdrm2 libxkbcommon0 libxcomposite1 \
     libxdamage1 libxrandr2 libgbm1 libasound2 \
     libpango-1.0-0 libcairo2 libxshmfence1 \
     libx11-xcb1 libxcb-dri3-0 \
+    libglib2.0-0 libdbus-1-3 libexpat1 \
     fonts-liberation fonts-noto fonts-noto-cjk \
-    # Cleanup
+    fonts-freefont-ttf fonts-unifont \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install Python deps
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright Chromium only (smallest footprint)
+# Install Chromium only — do NOT run playwright install-deps
+# (deps already installed manually above, avoids ttf-ubuntu-font-family error)
 RUN playwright install chromium
-RUN playwright install-deps chromium
 
-# Copy app
 COPY . .
 
-# Railway uses PORT env var
 ENV PORT=8080
 EXPOSE 8080
 
